@@ -2,12 +2,12 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Bootstrap Python Project with uv",
         "description": "Initialize the Python project structure using uv, create pyproject.toml with all required dependencies (qdrant-client, fastembed, typer, rich, pymupdf, python-frontmatter), and set up the src/qdrant_indexer/ package structure.",
         "details": "1. Run `uv init --app` to create basic project structure\n2. Create pyproject.toml with:\n   - Project metadata (name, version, description)\n   - Python requirement >=3.10\n   - Dependencies: qdrant-client>=1.12.0, fastembed>=0.6.0, typer>=0.12.0, rich>=13.0.0, pymupdf>=1.24.0, python-frontmatter>=1.0.0\n   - Entry point: qdrant-indexer = \"qdrant_indexer.cli:app\"\n   - Build system using hatchling\n3. Create src/qdrant_indexer/ directory structure with __init__.py\n4. Run `uv sync` to generate uv.lock and install dependencies",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -16,61 +16,70 @@
             "title": "Initialize uv project with uv init --app",
             "description": "Run uv init --app to create the basic project structure",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
-            "parentTaskId": 1
+            "parentTaskId": 1,
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:49:36.915Z"
           },
           {
             "id": 2,
             "title": "Configure pyproject.toml with dependencies",
             "description": "Add all dependencies: qdrant-client, fastembed, typer, rich, pymupdf, python-frontmatter. Set up entry point and build system.",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
-            "parentTaskId": 1
+            "parentTaskId": 1,
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:49:36.916Z"
           },
           {
             "id": 3,
             "title": "Create src/qdrant_indexer/ directory structure",
             "description": "Create the package directory with __init__.py and placeholder modules",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
-            "parentTaskId": 1
+            "parentTaskId": 1,
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:49:36.918Z"
           },
           {
             "id": 4,
             "title": "Run uv sync to generate lockfile",
             "description": "Sync dependencies and generate uv.lock file",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
-            "parentTaskId": 1
+            "parentTaskId": 1,
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:49:36.920Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T13:49:36.920Z"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Implement Document Data Model",
         "description": "Create the core data structures for representing documents and their metadata in src/qdrant_indexer/models.py",
         "details": "Create dataclasses/Pydantic models:\n1. Document class with fields:\n   - content: str (the text content)\n   - metadata: dict (source file, frontmatter, etc.)\n   - source_path: Path (original file path)\n2. Chunk class with fields:\n   - text: str (chunk content)\n   - index: int (chunk position)\n   - total_chunks: int\n   - metadata: dict (inherited from document + chunk-specific)\n3. IndexedPoint class representing a Qdrant point:\n   - id: str/int\n   - vector: list[float]\n   - payload: dict",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          1
+          "1"
         ],
         "priority": "high",
         "subtasks": []
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Implement Document Loaders",
         "description": "Create document loaders for different file formats in src/qdrant_indexer/loaders.py - supporting Markdown, Text, PDF, and ReStructuredText files.",
         "details": "1. Create abstract base DocumentLoader class with load(path: Path) -> Document method\n2. Implement MarkdownLoader:\n   - Use python-frontmatter to extract YAML frontmatter as metadata\n   - Return content without frontmatter\n3. Implement TextLoader:\n   - Simple file read with UTF-8 encoding\n   - Basic metadata (filename, size, modified time)\n4. Implement PDFLoader:\n   - Use pymupdf (fitz) to extract text from PDF pages\n   - Include page numbers in metadata\n5. Implement ReStructuredTextLoader:\n   - Parse .rst files\n   - Extract directives/metadata if present\n6. Create get_loader(file_path: Path) factory function\n   - Map extensions to loaders: .md -> MarkdownLoader, .txt -> TextLoader, .pdf -> PDFLoader, .rst -> ReStructuredTextLoader\n   - Default to TextLoader for unknown extensions\n7. Create LOADERS dict for extension mapping",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          2
+          "2"
         ],
         "priority": "high",
         "subtasks": [
@@ -81,7 +90,8 @@
             "details": "",
             "status": "pending",
             "dependencies": [],
-            "parentTaskId": 3
+            "parentTaskId": 3,
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -90,7 +100,8 @@
             "details": "",
             "status": "pending",
             "dependencies": [],
-            "parentTaskId": 3
+            "parentTaskId": 3,
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -99,7 +110,8 @@
             "details": "",
             "status": "pending",
             "dependencies": [],
-            "parentTaskId": 3
+            "parentTaskId": 3,
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -108,7 +120,8 @@
             "details": "",
             "status": "pending",
             "dependencies": [],
-            "parentTaskId": 3
+            "parentTaskId": 3,
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -117,19 +130,20 @@
             "details": "",
             "status": "pending",
             "dependencies": [],
-            "parentTaskId": 3
+            "parentTaskId": 3,
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Implement Chunking Strategies",
         "description": "Create text chunking implementations in src/qdrant_indexer/chunkers.py with recursive character splitting as the primary strategy.",
         "details": "1. Create abstract base Chunker class with chunk(text: str) -> List[str] method\n2. Implement RecursiveChunker (primary strategy):\n   - Parameters: chunk_size (default 512), overlap (default 50)\n   - Split hierarchy: \\n\\n (paragraphs) -> \\n (lines) -> . (sentences) -> space (words)\n   - Ensure chunks don't exceed chunk_size\n   - Maintain overlap between consecutive chunks for context continuity\n3. Implement FixedSizeChunker (simple alternative):\n   - Split text into fixed-size chunks with overlap\n   - No semantic awareness\n4. Create helper functions:\n   - split_text_with_overlap(text, size, overlap)\n   - merge_small_chunks(chunks, min_size)\n5. Consider adding SemanticChunker placeholder for future enhancement",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          2
+          "2"
         ],
         "priority": "high",
         "subtasks": [
@@ -140,7 +154,8 @@
             "dependencies": [],
             "details": "Create an abstract base class (ABC) named Chunker with:\n- Import ABC and abstractmethod from abc module\n- Define abstract method: chunk(text: str) -> List[str]\n- Add docstring explaining the chunker interface\n- Add type hints for all methods\nThis provides the foundation for all chunking strategy implementations and ensures a consistent interface across different chunking approaches.",
             "status": "pending",
-            "testStrategy": "Verify that the abstract class cannot be instantiated directly and that concrete implementations must implement the chunk() method"
+            "testStrategy": "Verify that the abstract class cannot be instantiated directly and that concrete implementations must implement the chunk() method",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -151,7 +166,8 @@
             ],
             "details": "Implement RecursiveChunker(Chunker) with:\n- Constructor parameters: chunk_size (default 512), overlap (default 50)\n- Implement chunk() method with split hierarchy:\n  1. First try splitting by '\\n\\n' (paragraphs)\n  2. If chunks too large, split by '\\n' (lines)\n  3. If still too large, split by '. ' (sentences)\n  4. Finally split by space (words) as last resort\n- Ensure no chunk exceeds chunk_size\n- Maintain overlap between consecutive chunks for context continuity\n- Handle edge cases: empty text, text smaller than chunk_size\n- Add logic to recursively process chunks that are still too large\n- Return list of text chunks with proper overlap",
             "status": "pending",
-            "testStrategy": "Test with various text lengths, verify chunk sizes stay within limits, verify overlap is maintained, test each split level (paragraphs, lines, sentences, words)"
+            "testStrategy": "Test with various text lengths, verify chunk sizes stay within limits, verify overlap is maintained, test each split level (paragraphs, lines, sentences, words)",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -162,7 +178,8 @@
             ],
             "details": "Implement FixedSizeChunker(Chunker) with:\n- Constructor parameters: chunk_size (default 512), overlap (default 50)\n- Implement chunk() method that:\n  1. Splits text into fixed-size chunks based on chunk_size\n  2. Applies overlap by including the last 'overlap' characters from previous chunk\n  3. Handles edge cases: empty text, text smaller than chunk_size\n- No semantic awareness - purely character-based splitting\n- Return list of text chunks with specified overlap\nThis provides a simpler, faster alternative when semantic boundaries are not important.",
             "status": "pending",
-            "testStrategy": "Test with various text lengths, verify exact chunk sizes, verify overlap calculations, test edge cases like empty text and small text"
+            "testStrategy": "Test with various text lengths, verify exact chunk sizes, verify overlap calculations, test edge cases like empty text and small text",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -175,20 +192,21 @@
             ],
             "details": "Implement helper functions in chunkers.py:\n1. split_text_with_overlap(text: str, size: int, overlap: int) -> List[str]:\n   - Generic function to split text into chunks of given size\n   - Apply overlap between consecutive chunks\n   - Used by both RecursiveChunker and FixedSizeChunker\n2. merge_small_chunks(chunks: List[str], min_size: int) -> List[str]:\n   - Merge consecutive chunks that are smaller than min_size\n   - Prevent having many tiny chunks that lack context\n   - Ensure merged chunks don't exceed reasonable size\n3. Optional: Add SemanticChunker class stub with NotImplementedError for future enhancement\n- Add comprehensive docstrings with usage examples\n- Add type hints for all parameters",
             "status": "pending",
-            "testStrategy": "Test split_text_with_overlap with various size/overlap combinations, test merge_small_chunks with different chunk sizes and minimum thresholds"
+            "testStrategy": "Test split_text_with_overlap with various size/overlap combinations, test merge_small_chunks with different chunk sizes and minimum thresholds",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Implement Core Indexer",
         "description": "Create the main QdrantIndexer class in src/qdrant_indexer/indexer.py that orchestrates document loading, chunking, embedding, and uploading to Qdrant.",
         "details": "1. Create QdrantIndexer class with:\n   - __init__(qdrant_url, collection_name, embedding_model=\"sentence-transformers/all-MiniLM-L6-v2\")\n   - Initialize QdrantClient and FastEmbed TextEmbedding\n2. Implement ensure_collection() method:\n   - Check if collection exists with client.collection_exists()\n   - Create with vectors_config: size=384 (all-MiniLM-L6-v2), distance=Cosine\n3. Implement index_directory() method:\n   - Parameters: path, pattern, chunker, batch_size\n   - Glob files matching pattern\n   - For each file: load with appropriate loader, chunk, embed, create points\n   - Batch upload with client.upsert()\n   - Include progress reporting\n4. Implement index_file() method for single file indexing\n5. Create point ID generation (hash of file path + chunk index)\n6. Build payload with: text, source, chunk_index, total_chunks, timestamp, metadata",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          3,
-          4
+          "3",
+          "4"
         ],
         "priority": "high",
         "subtasks": [
@@ -199,7 +217,8 @@
             "dependencies": [],
             "details": "Create the QdrantIndexer class in src/qdrant_indexer/indexer.py with:\n- Import statements: QdrantClient from qdrant_client, TextEmbedding from fastembed, and necessary types\n- Constructor __init__(self, qdrant_url: str, collection_name: str, embedding_model: str = \"sentence-transformers/all-MiniLM-L6-v2\")\n- Initialize self.client = QdrantClient(url=qdrant_url)\n- Initialize self.embeddings = TextEmbedding(embedding_model)\n- Store self.collection = collection_name\n- Add type hints for all parameters and class attributes\n- Add comprehensive docstring explaining the class purpose and parameters\n- Import Path from pathlib, datetime, and hashlib for future methods",
             "status": "pending",
-            "testStrategy": "Verify that QdrantIndexer can be instantiated with default and custom parameters, check that QdrantClient and TextEmbedding are properly initialized"
+            "testStrategy": "Verify that QdrantIndexer can be instantiated with default and custom parameters, check that QdrantClient and TextEmbedding are properly initialized",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -210,7 +229,8 @@
             ],
             "details": "Implement ensure_collection(self) method in QdrantIndexer class:\n- Use self.client.collection_exists(self.collection) to check if collection exists\n- If not exists, create collection with self.client.create_collection()\n- Configure vectors_config with: size=384 (for all-MiniLM-L6-v2 embeddings), distance=\"Cosine\"\n- Import VectorParams and Distance from qdrant_client.models if needed for type safety\n- Add error handling for collection creation failures\n- Add docstring explaining the vector configuration\n- Log collection creation or skip if already exists",
             "status": "pending",
-            "testStrategy": "Test with mock QdrantClient to verify collection_exists is called, verify create_collection is called with correct vector config when collection doesn't exist, verify method is idempotent"
+            "testStrategy": "Test with mock QdrantClient to verify collection_exists is called, verify create_collection is called with correct vector config when collection doesn't exist, verify method is idempotent",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -221,7 +241,8 @@
             ],
             "details": "Implement index_file(self, file_path: Path, chunker: Chunker, batch_size: int = 100) -> int method:\n- Import get_loader from loaders module to get appropriate loader for file type\n- Load document: loader = get_loader(file_path); doc = loader.load(file_path)\n- Chunk content: chunks = chunker.chunk(doc.content)\n- For each chunk with index i:\n  - Generate embedding: vector = list(self.embeddings.embed([chunk])[0])\n  - Create point ID using hashlib: point_id = hash(f\"{file_path}-{i}\") & 0x7FFFFFFFFFFFFFFF (ensure positive int64)\n  - Build payload dict with: text=chunk, source=str(file_path), chunk_index=i, total_chunks=len(chunks), timestamp=datetime.now().isoformat(), **doc.metadata\n  - Append to batch list\n- Batch upload when len(batch) >= batch_size using self.client.upsert()\n- Upload remaining batch if any\n- Return total number of chunks processed\n- Add comprehensive error handling and logging",
             "status": "pending",
-            "testStrategy": "Test with sample files of different types, verify correct number of points created, verify point IDs are consistent and positive, verify payloads contain all required fields, test batch uploading logic"
+            "testStrategy": "Test with sample files of different types, verify correct number of points created, verify point IDs are consistent and positive, verify payloads contain all required fields, test batch uploading logic",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -232,7 +253,8 @@
             ],
             "details": "Implement index_directory(self, path: Path, pattern: str = \"**/*.{md,rst,txt,pdf}\", chunker: Chunker = None, batch_size: int = 100) -> dict method:\n- If chunker is None, create default: from chunkers import RecursiveChunker; chunker = RecursiveChunker()\n- Use path.glob(pattern) to find all matching files\n- Initialize counters: total_files=0, total_chunks=0, failed_files=[]\n- For each file_path in matching files:\n  - Try: chunks_count = self.index_file(file_path, chunker, batch_size)\n  - Update total_files += 1 and total_chunks += chunks_count\n  - Print progress: f\"Processed {file_path.name}: {chunks_count} chunks\"\n  - Except: log error and append to failed_files\n- Return summary dict with: {\"total_files\": total_files, \"total_chunks\": total_chunks, \"failed_files\": failed_files}\n- Add docstring with parameter explanations and return value description\n- Consider using rich.progress for better progress reporting in future enhancement",
             "status": "pending",
-            "testStrategy": "Test with directory containing multiple file types, verify all matching files are processed, verify pattern matching works correctly, test error handling with invalid files, verify summary statistics are accurate"
+            "testStrategy": "Test with directory containing multiple file types, verify all matching files are processed, verify pattern matching works correctly, test error handling with invalid files, verify summary statistics are accurate",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -243,19 +265,20 @@
             ],
             "details": "Add helper methods to QdrantIndexer class:\n1. _generate_point_id(self, file_path: Path, chunk_index: int) -> int:\n   - Create stable hash from f\"{file_path}-{chunk_index}\"\n   - Use hashlib.sha256 for better distribution than built-in hash\n   - Convert to int64 and ensure positive: int.from_bytes(hash_obj.digest()[:8], 'big') & 0x7FFFFFFFFFFFFFFF\n   - Return the point ID\n2. _build_payload(self, chunk: str, file_path: Path, chunk_index: int, total_chunks: int, metadata: dict) -> dict:\n   - Create payload dict with required fields: text, source, chunk_index, total_chunks, timestamp\n   - Merge with additional metadata from document loader\n   - Validate that text is not empty and source path is valid\n   - Return validated payload dict\n3. Refactor index_file() to use these helper methods for cleaner code\n- Add comprehensive docstrings for both helper methods\n- Make methods private with leading underscore since they're internal utilities",
             "status": "pending",
-            "testStrategy": "Test _generate_point_id produces consistent IDs for same inputs, test IDs are always positive int64, test _build_payload creates valid payload structure, verify all required fields are present, test with various metadata combinations"
+            "testStrategy": "Test _generate_point_id produces consistent IDs for same inputs, test IDs are always positive int64, test _build_payload creates valid payload structure, verify all required fields are present, test with various metadata combinations",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Implement CLI with Typer",
         "description": "Create the command-line interface in src/qdrant_indexer/cli.py using Typer with commands for indexing, listing, and deleting collections.",
         "details": "1. Create Typer app instance\n2. Implement 'index' command:\n   - Arguments: path (directory to index)\n   - Options: --collection, --url (default localhost:6333), --chunk-size, --chunk-overlap, --pattern, --batch-size, --exclude\n   - Progress output with rich\n3. Implement 'list-collections' command:\n   - Option: --url\n   - Display all collections with counts\n4. Implement 'delete-collection' command:\n   - Arguments: collection name\n   - Options: --url, --yes/-y (skip confirmation)\n   - Confirmation prompt using typer.confirm()\n5. Implement 'reindex' command:\n   - Delete existing collection data for source files, then re-index\n6. Add rich console output for progress and status messages\n7. Handle errors gracefully with helpful messages",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          5
+          "5"
         ],
         "priority": "high",
         "subtasks": [
@@ -266,7 +289,8 @@
             "dependencies": [],
             "details": "Create src/qdrant_indexer/cli.py with:\n- Import statements: typer, Path from pathlib, rich.console for Console\n- Create Typer app instance: app = typer.Typer(help=\"Qdrant Indexer - Index documentation into Qdrant collections\")\n- Add main() function with if __name__ == \"__main__\": app()\n- Import QdrantIndexer from indexer module\n- Import RecursiveChunker from chunkers module\n- Import QdrantClient from qdrant_client\n- Set up basic type hints and structure for commands\n- Add module-level docstring explaining the CLI tool purpose\n\nThis provides the foundation for all CLI commands and ensures proper entry point configuration matching the pyproject.toml script definition.",
             "status": "pending",
-            "testStrategy": "Verify Typer app can be instantiated and run with --help flag, check that imports resolve correctly"
+            "testStrategy": "Verify Typer app can be instantiated and run with --help flag, check that imports resolve correctly",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -277,7 +301,8 @@
             ],
             "details": "Implement @app.command() decorated function index() with:\n- Required argument: path: Path (directory to index)\n- Options:\n  * --collection: str (required, collection name)\n  * --url: str (default=\"http://localhost:6333\", Qdrant server URL)\n  * --chunk-size: int (default=512, chunk size in characters)\n  * --chunk-overlap: int (default=50, overlap between chunks)\n  * --pattern: str (default=\"**/*.{md,rst,txt,pdf}\", glob pattern for files)\n  * --batch-size: int (default=100, batch size for uploads)\n  * --exclude: List[str] (default=None, patterns to exclude)\n- Logic:\n  1. Validate path exists and is a directory\n  2. Create QdrantIndexer instance with url and collection\n  3. Call ensure_collection() to create collection if needed\n  4. Create RecursiveChunker with chunk_size and chunk_overlap\n  5. Call index_directory() with path, pattern, chunker, batch_size\n  6. Use rich Console to display progress and results\n  7. Show summary: files processed, chunks created, time elapsed\n- Error handling: wrap in try/except, display helpful error messages with rich\n- Add comprehensive docstring with parameter descriptions and usage examples",
             "status": "pending",
-            "testStrategy": "Test with sample directory, verify all options work correctly, test error handling with invalid paths, verify chunking parameters are passed correctly, check rich output formatting"
+            "testStrategy": "Test with sample directory, verify all options work correctly, test error handling with invalid paths, verify chunking parameters are passed correctly, check rich output formatting",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -288,7 +313,8 @@
             ],
             "details": "Implement @app.command(name=\"list-collections\") decorated function list_collections() with:\n- Options:\n  * --url: str (default=\"http://localhost:6333\", Qdrant server URL)\n- Logic:\n  1. Create QdrantClient instance with url\n  2. Call client.get_collections() to retrieve all collections\n  3. For each collection, get collection info with client.get_collection(name) to get point count\n  4. Use rich.table.Table to create formatted output with columns: Collection Name, Points Count, Vector Size\n  5. Display table using rich Console\n- Error handling:\n  * Catch connection errors if Qdrant server is unreachable\n  * Display helpful message if no collections exist\n  * Handle API errors gracefully\n- Add docstring explaining the command purpose\n- Format output to be readable and informative\n\nThis command helps users see what collections are available and their sizes before indexing or querying.",
             "status": "pending",
-            "testStrategy": "Test against Qdrant instance with collections, verify table formatting, test with no collections, test connection error handling, verify point counts are accurate"
+            "testStrategy": "Test against Qdrant instance with collections, verify table formatting, test with no collections, test connection error handling, verify point counts are accurate",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -299,7 +325,8 @@
             ],
             "details": "Implement @app.command(name=\"delete-collection\") decorated function delete_collection() with:\n- Required argument: collection: str (name of collection to delete)\n- Options:\n  * --url: str (default=\"http://localhost:6333\", Qdrant server URL)\n  * --yes / -y: bool (default=False, skip confirmation prompt)\n- Logic:\n  1. Create QdrantClient instance with url\n  2. Check if collection exists with client.collection_exists(collection)\n  3. If not exists, display error message and exit\n  4. If --yes flag not provided:\n     - Use typer.confirm(f\"Are you sure you want to delete collection '{collection}'?\", abort=True)\n     - This will abort execution if user declines\n  5. Call client.delete_collection(collection)\n  6. Display success message with rich console: \"✓ Deleted collection '{collection}'\"\n- Error handling:\n  * Catch collection not found errors\n  * Handle connection errors\n  * Display clear error messages with typer.echo()\n- Add warning styling to confirmation prompt using rich\n- Add docstring with safety warnings\n\nThis ensures users don't accidentally delete important collections without confirmation.",
             "status": "pending",
-            "testStrategy": "Test confirmation prompt behavior, verify --yes flag bypasses prompt, test with non-existent collection, verify successful deletion, test abort behavior when user declines"
+            "testStrategy": "Test confirmation prompt behavior, verify --yes flag bypasses prompt, test with non-existent collection, verify successful deletion, test abort behavior when user declines",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -312,32 +339,33 @@
             ],
             "details": "Enhance all CLI commands with robust error handling and rich output:\n1. Create helper function display_error(message: str) that uses rich Console to show formatted errors\n2. Create helper function display_success(message: str) for success messages with ✓ checkmark\n3. Wrap all command logic in try/except blocks:\n   - Catch QdrantException for Qdrant-specific errors\n   - Catch ConnectionError for network issues\n   - Catch FileNotFoundError for missing paths\n   - Catch ValueError for invalid parameters\n   - Catch general Exception as fallback\n4. Add rich Progress context manager to index command:\n   - Show progress bar for file discovery\n   - Show progress bar for indexing with file names\n   - Update progress as files are processed\n5. Add rich Panel for summary output:\n   - Total files processed\n   - Total chunks created\n   - Time elapsed\n   - Any errors encountered\n6. Use rich.traceback.install() for better exception formatting in development\n7. Add --verbose flag to index command for detailed logging\n8. Ensure all error messages are actionable (suggest fixes)\n\nThis makes the CLI user-friendly with clear feedback and professional-looking output.",
             "status": "pending",
-            "testStrategy": "Test error scenarios: invalid URLs, missing directories, connection failures; verify rich formatting is correct; test progress bars with large directories; verify verbose output shows detailed information"
+            "testStrategy": "Test error scenarios: invalid URLs, missing directories, connection failures; verify rich formatting is correct; test progress bars with large directories; verify verbose output shows detailed information",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Implement Configuration System",
         "description": "Create configuration handling in src/qdrant_indexer/config.py supporting both CLI arguments and optional .qdrant-indexer.toml config file.",
         "details": "1. Define Config dataclass/Pydantic model with sections:\n   - QdrantConfig: url\n   - EmbeddingConfig: model, cache_dir\n   - ChunkingConfig: strategy, chunk_size, chunk_overlap\n   - IndexingConfig: batch_size, exclude_patterns\n2. Implement load_config() function:\n   - Search for .qdrant-indexer.toml in current dir and parents\n   - Parse TOML file if found\n   - Return default config if not found\n3. Implement merge_config() to combine file config with CLI args\n   - CLI args take precedence\n4. Add config validation\n5. Support environment variables for Qdrant URL (QDRANT_URL)",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          1
+          "1"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Create Nix Flake with uv2nix",
         "description": "Create flake.nix using uv2nix to package the application for Nix, providing both a package and development shell.",
         "details": "1. Create flake.nix with inputs:\n   - nixpkgs (nixos-unstable)\n   - pyproject-nix\n   - uv2nix\n   - pyproject-build-systems\n2. Configure outputs:\n   - Load workspace with uv2nix.lib.workspace.loadWorkspace\n   - Build Python set with dependencies\n   - Apply overlays for wheel support\n   - Create virtual environment with mkVirtualEnv\n3. Define packages.${system}.default as the built package\n4. Define devShells.${system}.default with:\n   - The virtual environment\n   - uv for development\n   - Helpful shellHook message\n5. Test with `nix build` and `nix develop`\n6. Ensure fastembed model caching works correctly",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          1
+          "1"
         ],
         "priority": "high",
         "subtasks": [
@@ -348,7 +376,8 @@
             "dependencies": [],
             "details": "Create flake.nix in the project root with:\n- Set description explaining this is a Qdrant documentation indexer\n- Add inputs section with:\n  * nixpkgs: github:NixOS/nixpkgs/nixos-unstable\n  * pyproject-nix: github:pyproject-nix/pyproject.nix\n  * uv2nix: github:pyproject-nix/uv2nix\n  * pyproject-build-systems: github:pyproject-nix/build-system-pkgs\n- Configure input.uv2nix.inputs.pyproject-nix to follow pyproject-nix\n- Configure input.pyproject-build-systems.inputs.pyproject-nix to follow pyproject-nix\n- Configure input.uv2nix.inputs.nixpkgs to follow nixpkgs\n- Add outputs function skeleton with system support using flake-utils or systems list\n- Ensure proper flake structure with outputs = { self, nixpkgs, pyproject-nix, uv2nix, pyproject-build-systems }: {...}",
             "status": "pending",
-            "testStrategy": "Run 'nix flake check' to verify flake structure is valid, ensure all inputs resolve correctly"
+            "testStrategy": "Run 'nix flake check' to verify flake structure is valid, ensure all inputs resolve correctly",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -359,7 +388,8 @@
             ],
             "details": "In the flake.nix outputs section:\n1. Load workspace with: workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };\n2. Create Python overlay using workspace.mkPyprojectOverlay with root = ./.;\n3. Build pkgs with nixpkgs.legacyPackages.${system}.extend to apply:\n   - pyproject-build-systems.overlays.default (for build system support)\n   - workspace overlay from step 2\n4. Define python = pkgs.python3 or pkgs.python311\n5. Create pythonSet by calling workspace.mkVirtualEnv with:\n   - python = the python version from step 4\n   - Set editablePackageSources to handle editable installs if needed\n6. Handle fastembed dependency and ensure torch/ML dependencies are properly resolved\n7. Consider adding allowBroken or allowUnfree if needed for certain Python packages",
             "status": "pending",
-            "testStrategy": "Verify workspace loads without errors, check that all dependencies from pyproject.toml are resolved in the Python set"
+            "testStrategy": "Verify workspace loads without errors, check that all dependencies from pyproject.toml are resolved in the Python set",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -370,7 +400,8 @@
             ],
             "details": "In packages.${system} output:\n1. Create default package using pythonSet from previous step\n2. Build the package with proper structure:\n   - Use pythonSet.mkDerivation or similar to create package derivation\n   - Include all runtime dependencies (qdrant-client, fastembed, typer, rich, pymupdf, python-frontmatter)\n   - Set up the entry point script for 'qdrant-indexer' CLI command\n   - Configure FASTEMBED_CACHE_PATH environment variable to a writable location\n3. Add meta attributes:\n   - description = \"Index documentation into Qdrant vector database\"\n   - homepage = project URL if available\n   - license = appropriate license from pkgs.lib.licenses\n4. Ensure the built package includes the src/qdrant_indexer module structure\n5. Test that the package builds and the CLI entry point is accessible\n6. Handle potential issues with native dependencies (pymupdf may need system libraries)",
             "status": "pending",
-            "testStrategy": "Run 'nix build' successfully, verify the result/bin/qdrant-indexer executable exists and runs with --help flag"
+            "testStrategy": "Run 'nix build' successfully, verify the result/bin/qdrant-indexer executable exists and runs with --help flag",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -381,21 +412,22 @@
             ],
             "details": "In devShells.${system} output:\n1. Create default shell using pkgs.mkShell with:\n   - packages = [ pythonSet pkgs.uv ] to include virtual environment and uv\n   - Add any additional development tools needed (git, etc.)\n2. Configure shellHook with:\n   - Welcome message: \"Entering qdrant-indexer development environment\"\n   - Instructions: \"Use 'uv sync' to sync dependencies\"\n   - Helpful commands: \"Run 'qdrant-indexer --help' to see CLI options\"\n   - Set FASTEMBED_CACHE_PATH to local cache directory (.cache/fastembed)\n   - Export any necessary environment variables (PYTHONPATH if needed)\n3. Ensure the shell provides:\n   - Access to all development dependencies\n   - The qdrant-indexer command in PATH\n   - uv for dependency management\n4. Consider adding pre-commit hooks or development utilities\n5. Make sure the virtual environment is properly activated",
             "status": "pending",
-            "testStrategy": "Run 'nix develop' successfully, verify uv is available, verify qdrant-indexer command works, test that fastembed model caching works in a writable location"
+            "testStrategy": "Run 'nix develop' successfully, verify uv is available, verify qdrant-indexer command works, test that fastembed model caching works in a writable location",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Add Unit Tests",
         "description": "Create comprehensive unit tests for loaders, chunkers, and indexer components in tests/ directory.",
         "details": "1. Add pytest and pytest-cov to dev dependencies\n2. Create tests/ directory structure:\n   - tests/__init__.py\n   - tests/conftest.py (fixtures)\n   - tests/test_loaders.py\n   - tests/test_chunkers.py\n   - tests/test_indexer.py\n3. Test loaders:\n   - Test each loader with sample files\n   - Test metadata extraction\n   - Test error handling for missing/invalid files\n4. Test chunkers:\n   - Test RecursiveChunker with various text sizes\n   - Verify chunk sizes respect limits\n   - Verify overlap is maintained\n   - Test edge cases (empty text, text smaller than chunk_size)\n5. Test indexer:\n   - Mock Qdrant client for unit tests\n   - Test collection creation\n   - Test point generation\n   - Test batch uploading logic\n6. Create test fixtures with sample documents",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          3,
-          4,
-          5
+          "3",
+          "4",
+          "5"
         ],
         "priority": "medium",
         "subtasks": [
@@ -406,7 +438,8 @@
             "dependencies": [],
             "details": "1. Add pytest>=8.0.0 and pytest-cov>=4.1.0 to [project.optional-dependencies] dev section in pyproject.toml\n2. Create tests/ directory in project root\n3. Create tests/__init__.py file (can be empty)\n4. Run 'uv sync --extra dev' to install dev dependencies\n5. Verify pytest is installed by running 'pytest --version'\n\nThis establishes the testing infrastructure needed for all subsequent test files. The directory structure follows Python testing best practices with tests/ as a top-level directory parallel to src/.",
             "status": "pending",
-            "testStrategy": "Verify pytest can be run from project root with 'pytest tests/', even with no tests yet. Check that pytest-cov is available for coverage reporting."
+            "testStrategy": "Verify pytest can be run from project root with 'pytest tests/', even with no tests yet. Check that pytest-cov is available for coverage reporting.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -417,7 +450,8 @@
             ],
             "details": "Create tests/conftest.py with fixtures:\n1. @pytest.fixture sample_markdown_content: Returns markdown text with frontmatter (---\\ntitle: Test\\nauthor: Tester\\n---\\n# Header\\nContent)\n2. @pytest.fixture sample_markdown_file(tmp_path): Creates temporary .md file and returns Path\n3. @pytest.fixture sample_text_file(tmp_path): Creates .txt file with plain text\n4. @pytest.fixture sample_pdf_file(tmp_path): Creates simple PDF using pymupdf (optional - can mock instead)\n5. @pytest.fixture sample_rst_file(tmp_path): Creates .rst file with ReStructuredText\n6. @pytest.fixture mock_qdrant_client: Returns MagicMock configured for QdrantClient with mock methods (collection_exists, create_collection, upsert)\n7. @pytest.fixture sample_long_text: Returns text string ~2000 chars for chunking tests\n8. @pytest.fixture sample_document: Returns Document instance with sample metadata\n\nThese fixtures will be reused across all test modules, providing consistent test data and reducing duplication.",
             "status": "pending",
-            "testStrategy": "Verify all fixtures can be imported and used in test files. Test that temporary files are properly created and cleaned up. Verify mock_qdrant_client has expected methods."
+            "testStrategy": "Verify all fixtures can be imported and used in test files. Test that temporary files are properly created and cleaned up. Verify mock_qdrant_client has expected methods.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -428,7 +462,8 @@
             ],
             "details": "Create tests/test_loaders.py with test classes and functions:\n\n1. TestMarkdownLoader:\n   - test_load_markdown_with_frontmatter: Verify frontmatter is extracted to metadata\n   - test_load_markdown_content_without_frontmatter: Verify content is correct\n   - test_markdown_metadata_includes_filename: Check basic metadata\n   - test_markdown_file_not_found: Assert FileNotFoundError raised\n\n2. TestTextLoader:\n   - test_load_text_file: Verify content loaded correctly with UTF-8\n   - test_text_loader_metadata: Check filename, size, mtime in metadata\n   - test_text_file_encoding_error: Test handling of invalid UTF-8\n\n3. TestPDFLoader:\n   - test_load_pdf_extracts_text: Verify text extraction from pages\n   - test_pdf_metadata_includes_pages: Check page numbers in metadata\n   - test_pdf_file_invalid: Test error handling for corrupt PDF\n\n4. TestReStructuredTextLoader:\n   - test_load_rst_file: Verify RST content loaded\n   - test_rst_metadata_extraction: Test any directive metadata\n\n5. TestLoaderFactory:\n   - test_get_loader_for_markdown: Verify .md returns MarkdownLoader\n   - test_get_loader_for_pdf: Verify .pdf returns PDFLoader\n   - test_get_loader_default_unknown_extension: Verify unknown returns TextLoader\n\n6. Use sample file fixtures from conftest.py for all tests\n7. Test both successful cases and error conditions\n8. Verify Document objects have correct structure (content, metadata, source_path)",
             "status": "pending",
-            "testStrategy": "Run pytest tests/test_loaders.py with coverage. Aim for >90% coverage of loaders.py. Verify all loader classes and factory function work correctly."
+            "testStrategy": "Run pytest tests/test_loaders.py with coverage. Aim for >90% coverage of loaders.py. Verify all loader classes and factory function work correctly.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -439,7 +474,8 @@
             ],
             "details": "Create tests/test_chunkers.py with comprehensive test coverage:\n\n1. TestRecursiveChunker:\n   - test_chunks_respect_size_limit: Assert all chunks <= chunk_size\n   - test_chunks_maintain_overlap: Verify overlap chars match between consecutive chunks\n   - test_empty_text_returns_empty_list: Edge case for empty string\n   - test_text_smaller_than_chunk_size: Verify single chunk returned\n   - test_paragraph_splitting: Text with \\n\\n should split at paragraphs first\n   - test_sentence_splitting: If no paragraphs, should split at periods\n   - test_word_splitting_fallback: Very long lines should split at spaces\n   - test_overlap_parameter: Test with different overlap values (0, 25, 100)\n   - test_large_document_chunking: Use sample_long_text fixture, verify chunk count\n   - test_chunk_size_boundary_conditions: Test edge cases like chunk_size=1\n\n2. TestFixedSizeChunker:\n   - test_fixed_chunks_exact_size: Verify chunks are exactly chunk_size (except last)\n   - test_fixed_overlap_calculation: Verify overlap is correctly applied\n   - test_no_overlap_mode: Test with overlap=0\n   - test_text_smaller_than_chunk: Should return single chunk\n   - test_empty_text_fixed: Edge case handling\n\n3. TestHelperFunctions (if implemented):\n   - test_split_text_with_overlap: Test helper function independently\n   - test_merge_small_chunks: Verify small chunks are merged correctly\n\n4. Use parametrized tests (@pytest.mark.parametrize) for testing multiple chunk_size and overlap combinations\n5. Test both ASCII and Unicode text to ensure proper character handling\n6. Verify no data loss - all text from original should appear in chunks",
             "status": "pending",
-            "testStrategy": "Run pytest tests/test_chunkers.py with coverage. Aim for >95% coverage of chunkers.py. Use parametrize for thorough testing of different configurations. Verify chunk sizes and overlaps mathematically."
+            "testStrategy": "Run pytest tests/test_chunkers.py with coverage. Aim for >95% coverage of chunkers.py. Use parametrize for thorough testing of different configurations. Verify chunk sizes and overlaps mathematically.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -452,68 +488,73 @@
             ],
             "details": "Create tests/test_indexer.py with comprehensive mocking:\n\n1. TestQdrantIndexerInit:\n   - test_indexer_initialization: Verify QdrantClient and TextEmbedding created\n   - test_indexer_custom_embedding_model: Test with different model\n\n2. TestEnsureCollection:\n   - test_collection_exists_not_created: Mock collection_exists=True, verify create not called\n   - test_collection_not_exists_created: Mock collection_exists=False, verify create_collection called with correct vector config (size=384, distance=Cosine)\n\n3. TestIndexFile:\n   - test_index_single_file_creates_points: Use sample_markdown_file, verify points generated\n   - test_point_id_generation_consistent: Same file should generate same IDs\n   - test_point_payload_structure: Verify payload has text, source, chunk_index, total_chunks, timestamp\n   - test_file_metadata_included_in_payload: Verify document metadata merged into payload\n   - test_batch_upload_triggered: Mock upsert, verify called when batch_size reached\n   - test_remaining_batch_uploaded: Verify final batch uploaded even if < batch_size\n   - test_returns_chunk_count: Verify index_file returns correct number of chunks\n\n4. TestIndexDirectory:\n   - test_index_multiple_files(tmp_path): Create multiple test files, verify all processed\n   - test_pattern_matching: Test glob patterns filter files correctly\n   - test_failed_files_tracked: Mock file that raises error, verify in failed_files list\n   - test_summary_statistics: Verify returned dict has total_files, total_chunks, failed_files\n   - test_default_chunker_used: Verify RecursiveChunker created if None passed\n\n5. TestHelperMethods:\n   - test_generate_point_id_consistency: Same input produces same ID\n   - test_generate_point_id_positive: All IDs are positive int64\n   - test_build_payload_required_fields: Verify all required fields present\n   - test_build_payload_merges_metadata: Verify custom metadata included\n\n6. Use mock_qdrant_client fixture from conftest.py\n7. Mock TextEmbedding.embed() to return fake vectors (list of 384 floats)\n8. Use unittest.mock.patch or pytest-mock for mocking\n9. Verify embedding generation is called with correct chunk text\n10. Test error handling and edge cases",
             "status": "pending",
-            "testStrategy": "Run pytest tests/test_indexer.py with coverage. Aim for >90% coverage of indexer.py. Mock all external dependencies (Qdrant, FastEmbed). Verify integration between loaders, chunkers, and indexer. Use caplog to verify logging output."
+            "testStrategy": "Run pytest tests/test_indexer.py with coverage. Aim for >90% coverage of indexer.py. Mock all external dependencies (Qdrant, FastEmbed). Verify integration between loaders, chunkers, and indexer. Use caplog to verify logging output.",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Add Integration Tests",
         "description": "Create integration tests that test the full indexing pipeline against a real Qdrant instance.",
         "details": "1. Create tests/test_integration.py\n2. Add pytest markers for integration tests (can be skipped if Qdrant unavailable)\n3. Test full workflow:\n   - Create test documents in tmp_path\n   - Index documents to test collection\n   - Verify documents are searchable\n   - Clean up test collection\n4. Test CLI commands:\n   - Test index command with subprocess\n   - Test list-collections\n   - Test delete-collection\n5. Add docker-compose.yml or instructions for running Qdrant locally\n6. Configure CI to optionally run integration tests",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          9
+          "9"
         ],
         "priority": "low",
         "subtasks": []
       },
       {
-        "id": 11,
+        "id": "11",
         "title": "Create README and Documentation",
         "description": "Write comprehensive README.md with installation instructions, usage examples, and configuration documentation.",
         "details": "1. Create README.md with sections:\n   - Project overview and purpose\n   - Installation (Nix flake, pip/uv)\n   - Quick start guide\n   - CLI command reference with examples\n   - Configuration file format\n   - Supported file formats\n   - Integration with qdrant-mcp\n2. Add examples/ directory:\n   - examples/index-docs.sh (basic usage script)\n   - examples/config/.qdrant-indexer.toml (sample config)\n3. Document embedding model compatibility with qdrant-mcp\n4. Add troubleshooting section for common issues",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          6,
-          8
+          "6",
+          "8"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 12,
+        "id": "12",
         "title": "Add Progress Reporting and Logging",
         "description": "Implement rich progress bars and structured logging throughout the indexing process.",
         "details": "1. Add rich Progress context manager for file processing\n2. Show progress:\n   - File discovery progress\n   - Per-file chunking progress\n   - Embedding generation progress\n   - Upload batch progress\n3. Add --verbose/-v flag for detailed output\n4. Add --quiet/-q flag for minimal output\n5. Implement Python logging with configurable levels\n6. Log important events: files processed, chunks created, points uploaded\n7. Summary statistics at end: total files, chunks, time elapsed",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          6
+          "6"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 13,
+        "id": "13",
         "title": "Implement File Filtering and Exclusion",
         "description": "Add support for glob patterns to include/exclude files during indexing, with sensible defaults.",
         "details": "1. Add --pattern option for include patterns (default: \"**/*.{md,rst,txt}\")\n2. Add --exclude option for exclude patterns\n3. Default exclusions:\n   - node_modules/**\n   - **/.git/**\n   - **/__pycache__/**\n   - **/*.pyc\n   - **/venv/**\n   - **/.venv/**\n4. Support multiple --exclude flags\n5. Use pathlib and fnmatch for pattern matching\n6. Respect .gitignore if present (optional enhancement)\n7. Log which files are being skipped and why (in verbose mode)",
         "testStrategy": "",
         "status": "pending",
         "dependencies": [
-          5
+          "5"
         ],
         "priority": "medium",
         "subtasks": []
       }
     ],
     "metadata": {
-      "created": "2025-12-08T12:57:28.305Z",
-      "description": "Default tasks context",
-      "updated": "2025-12-08T12:59:21.521Z"
+      "version": "1.0.0",
+      "lastModified": "2025-12-08T13:49:36.920Z",
+      "taskCount": 13,
+      "completedCount": 1,
+      "tags": [
+        "master"
+      ]
     }
   }
 }
