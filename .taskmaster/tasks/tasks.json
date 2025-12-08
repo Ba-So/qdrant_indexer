@@ -78,7 +78,7 @@
         "description": "Create document loaders for different file formats in src/qdrant_indexer/loaders.py - supporting Markdown, Text, PDF, and ReStructuredText files.",
         "details": "1. Create abstract base DocumentLoader class with load(path: Path) -> Document method\n2. Implement MarkdownLoader:\n   - Use python-frontmatter to extract YAML frontmatter as metadata\n   - Return content without frontmatter\n3. Implement TextLoader:\n   - Simple file read with UTF-8 encoding\n   - Basic metadata (filename, size, modified time)\n4. Implement PDFLoader:\n   - Use pymupdf (fitz) to extract text from PDF pages\n   - Include page numbers in metadata\n5. Implement ReStructuredTextLoader:\n   - Parse .rst files\n   - Extract directives/metadata if present\n6. Create get_loader(file_path: Path) factory function\n   - Map extensions to loaders: .md -> MarkdownLoader, .txt -> TextLoader, .pdf -> PDFLoader, .rst -> ReStructuredTextLoader\n   - Default to TextLoader for unknown extensions\n7. Create LOADERS dict for extension mapping",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "2"
         ],
@@ -89,52 +89,58 @@
             "title": "Create base DocumentLoader ABC",
             "description": "Define abstract base class with load(path: Path) -> Document method",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:55:29.842Z"
           },
           {
             "id": 2,
             "title": "Implement MarkdownLoader with frontmatter extraction",
             "description": "Use python-frontmatter to extract YAML metadata, return content without frontmatter",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:55:29.844Z"
           },
           {
             "id": 3,
             "title": "Implement TextLoader",
             "description": "Simple UTF-8 file reader with basic metadata (filename, size, mtime)",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:55:29.846Z"
           },
           {
             "id": 4,
             "title": "Implement PDFLoader with pymupdf",
             "description": "Extract text from PDF pages using fitz, include page numbers in metadata",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:55:29.848Z"
           },
           {
             "id": 5,
             "title": "Create get_loader() factory and LOADERS registry",
             "description": "Map file extensions to loader classes, default to TextLoader for unknown types",
             "details": "",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 3,
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T13:55:29.850Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T13:55:29.850Z"
       },
       {
         "id": "4",
@@ -550,9 +556,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T13:53:30.239Z",
+      "lastModified": "2025-12-08T13:55:29.850Z",
       "taskCount": 13,
-      "completedCount": 2,
+      "completedCount": 3,
       "tags": [
         "master"
       ]
