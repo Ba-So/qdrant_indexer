@@ -1,8 +1,10 @@
 """Core indexer for uploading documents to Qdrant."""
 
 import hashlib
+import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
@@ -10,6 +12,11 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker
 from qdrant_indexer.loaders import get_loader
+
+logger = logging.getLogger(__name__)
+
+# Progress callback type: (event, current, total, message)
+ProgressCallback = Callable[[str, int, int, str], None]
 
 
 class QdrantIndexer:
@@ -38,6 +45,7 @@ class QdrantIndexer:
         self.collection = collection_name
         self.embeddings = TextEmbedding(model_name=embedding_model)
         self._vector_size = 384  # all-MiniLM-L6-v2 dimension
+        logger.debug(f"Initialized indexer for collection '{collection_name}' at {qdrant_url}")
 
     def ensure_collection(self) -> bool:
         """Ensure the collection exists, creating it if necessary.
@@ -46,6 +54,7 @@ class QdrantIndexer:
             True if collection was created, False if it already existed.
         """
         if self.client.collection_exists(self.collection):
+            logger.debug(f"Collection '{self.collection}' already exists")
             return False
 
         self.client.create_collection(
@@ -55,6 +64,7 @@ class QdrantIndexer:
                 distance=Distance.COSINE,
             ),
         )
+        logger.info(f"Created collection '{self.collection}'")
         return True
 
     def index_file(
@@ -62,6 +72,7 @@ class QdrantIndexer:
         file_path: Path,
         chunker: Chunker,
         batch_size: int = 100,
+        on_progress: ProgressCallback | None = None,
     ) -> int:
         """Index a single file into Qdrant.
 
@@ -69,21 +80,29 @@ class QdrantIndexer:
             file_path: Path to the file to index.
             chunker: Chunker instance to split the document.
             batch_size: Number of points to upload per batch.
+            on_progress: Optional callback for progress updates.
 
         Returns:
             Number of chunks indexed.
         """
+        logger.debug(f"Loading file: {file_path}")
         loader = get_loader(file_path)
         doc = loader.load(file_path)
 
+        logger.debug(f"Chunking content ({len(doc.content)} chars)")
         chunks = chunker.chunk(doc.content)
         if not chunks:
+            logger.debug(f"No chunks generated for {file_path}")
             return 0
 
         total_chunks = len(chunks)
         points_batch: list[PointStruct] = []
 
+        if on_progress:
+            on_progress("embedding", 0, total_chunks, f"Embedding {file_path.name}")
+
         # Generate embeddings for all chunks at once (more efficient)
+        logger.debug(f"Generating embeddings for {total_chunks} chunks")
         embeddings = list(self.embeddings.embed(chunks))
 
         for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
@@ -105,19 +124,25 @@ class QdrantIndexer:
             )
 
             if len(points_batch) >= batch_size:
+                logger.debug(f"Uploading batch of {len(points_batch)} points")
                 self.client.upsert(
                     collection_name=self.collection,
                     points=points_batch,
                 )
                 points_batch = []
 
+                if on_progress:
+                    on_progress("upload", i + 1, total_chunks, f"Uploaded {i + 1}/{total_chunks}")
+
         # Upload remaining points
         if points_batch:
+            logger.debug(f"Uploading final batch of {len(points_batch)} points")
             self.client.upsert(
                 collection_name=self.collection,
                 points=points_batch,
             )
 
+        logger.info(f"Indexed {file_path.name}: {total_chunks} chunks")
         return total_chunks
 
     def index_directory(
@@ -126,6 +151,7 @@ class QdrantIndexer:
         pattern: str = "**/*.md",
         chunker: Chunker | None = None,
         batch_size: int = 100,
+        on_progress: ProgressCallback | None = None,
     ) -> dict:
         """Index all matching files in a directory.
 
@@ -134,6 +160,7 @@ class QdrantIndexer:
             pattern: Glob pattern for file matching.
             chunker: Chunker instance (defaults to RecursiveChunker).
             batch_size: Number of points to upload per batch.
+            on_progress: Optional callback for progress updates.
 
         Returns:
             Summary dict with total_files, total_chunks, and failed_files.
@@ -141,21 +168,40 @@ class QdrantIndexer:
         if chunker is None:
             chunker = RecursiveChunker()
 
+        # Discover files first
+        files = [f for f in path.glob(pattern) if f.is_file()]
+        total_files_to_process = len(files)
+
+        logger.info(f"Found {total_files_to_process} files matching '{pattern}'")
+
+        if on_progress:
+            on_progress("discovery", total_files_to_process, total_files_to_process, f"Found {total_files_to_process} files")
+
         total_files = 0
         total_chunks = 0
         failed_files: list[str] = []
 
-        for file_path in path.glob(pattern):
-            if not file_path.is_file():
-                continue
+        for idx, file_path in enumerate(files):
+            if on_progress:
+                on_progress("file", idx, total_files_to_process, f"Processing {file_path.name}")
 
             try:
                 chunks_count = self.index_file(file_path, chunker, batch_size)
                 total_files += 1
                 total_chunks += chunks_count
-            except Exception as e:
-                failed_files.append(f"{file_path}: {e}")
 
+                if on_progress:
+                    on_progress("file_done", idx + 1, total_files_to_process, f"Indexed {file_path.name}: {chunks_count} chunks")
+
+            except Exception as e:
+                error_msg = f"{file_path}: {e}"
+                logger.error(f"Failed to index {file_path}: {e}")
+                failed_files.append(error_msg)
+
+                if on_progress:
+                    on_progress("file_error", idx + 1, total_files_to_process, f"Failed: {file_path.name}")
+
+        logger.info(f"Indexing complete: {total_files} files, {total_chunks} chunks")
         return {
             "total_files": total_files,
             "total_chunks": total_chunks,
