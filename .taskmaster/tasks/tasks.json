@@ -387,7 +387,7 @@
         "description": "Create flake.nix using uv2nix to package the application for Nix, providing both a package and development shell.",
         "details": "1. Create flake.nix with inputs:\n   - nixpkgs (nixos-unstable)\n   - pyproject-nix\n   - uv2nix\n   - pyproject-build-systems\n2. Configure outputs:\n   - Load workspace with uv2nix.lib.workspace.loadWorkspace\n   - Build Python set with dependencies\n   - Apply overlays for wheel support\n   - Create virtual environment with mkVirtualEnv\n3. Define packages.${system}.default as the built package\n4. Define devShells.${system}.default with:\n   - The virtual environment\n   - uv for development\n   - Helpful shellHook message\n5. Test with `nix build` and `nix develop`\n6. Ensure fastembed model caching works correctly",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "1"
         ],
@@ -399,9 +399,10 @@
             "description": "Create the initial flake.nix file with all required input sources: nixpkgs, pyproject-nix, uv2nix, and pyproject-build-systems.",
             "dependencies": [],
             "details": "Create flake.nix in the project root with:\n- Set description explaining this is a Qdrant documentation indexer\n- Add inputs section with:\n  * nixpkgs: github:NixOS/nixpkgs/nixos-unstable\n  * pyproject-nix: github:pyproject-nix/pyproject.nix\n  * uv2nix: github:pyproject-nix/uv2nix\n  * pyproject-build-systems: github:pyproject-nix/build-system-pkgs\n- Configure input.uv2nix.inputs.pyproject-nix to follow pyproject-nix\n- Configure input.pyproject-build-systems.inputs.pyproject-nix to follow pyproject-nix\n- Configure input.uv2nix.inputs.nixpkgs to follow nixpkgs\n- Add outputs function skeleton with system support using flake-utils or systems list\n- Ensure proper flake structure with outputs = { self, nixpkgs, pyproject-nix, uv2nix, pyproject-build-systems }: {...}",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run 'nix flake check' to verify flake structure is valid, ensure all inputs resolve correctly",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:11:01.331Z"
           },
           {
             "id": 2,
@@ -411,9 +412,10 @@
               1
             ],
             "details": "In the flake.nix outputs section:\n1. Load workspace with: workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };\n2. Create Python overlay using workspace.mkPyprojectOverlay with root = ./.;\n3. Build pkgs with nixpkgs.legacyPackages.${system}.extend to apply:\n   - pyproject-build-systems.overlays.default (for build system support)\n   - workspace overlay from step 2\n4. Define python = pkgs.python3 or pkgs.python311\n5. Create pythonSet by calling workspace.mkVirtualEnv with:\n   - python = the python version from step 4\n   - Set editablePackageSources to handle editable installs if needed\n6. Handle fastembed dependency and ensure torch/ML dependencies are properly resolved\n7. Consider adding allowBroken or allowUnfree if needed for certain Python packages",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify workspace loads without errors, check that all dependencies from pyproject.toml are resolved in the Python set",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:11:01.333Z"
           },
           {
             "id": 3,
@@ -423,9 +425,10 @@
               2
             ],
             "details": "In packages.${system} output:\n1. Create default package using pythonSet from previous step\n2. Build the package with proper structure:\n   - Use pythonSet.mkDerivation or similar to create package derivation\n   - Include all runtime dependencies (qdrant-client, fastembed, typer, rich, pymupdf, python-frontmatter)\n   - Set up the entry point script for 'qdrant-indexer' CLI command\n   - Configure FASTEMBED_CACHE_PATH environment variable to a writable location\n3. Add meta attributes:\n   - description = \"Index documentation into Qdrant vector database\"\n   - homepage = project URL if available\n   - license = appropriate license from pkgs.lib.licenses\n4. Ensure the built package includes the src/qdrant_indexer module structure\n5. Test that the package builds and the CLI entry point is accessible\n6. Handle potential issues with native dependencies (pymupdf may need system libraries)",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run 'nix build' successfully, verify the result/bin/qdrant-indexer executable exists and runs with --help flag",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:11:01.334Z"
           },
           {
             "id": 4,
@@ -435,11 +438,13 @@
               2
             ],
             "details": "In devShells.${system} output:\n1. Create default shell using pkgs.mkShell with:\n   - packages = [ pythonSet pkgs.uv ] to include virtual environment and uv\n   - Add any additional development tools needed (git, etc.)\n2. Configure shellHook with:\n   - Welcome message: \"Entering qdrant-indexer development environment\"\n   - Instructions: \"Use 'uv sync' to sync dependencies\"\n   - Helpful commands: \"Run 'qdrant-indexer --help' to see CLI options\"\n   - Set FASTEMBED_CACHE_PATH to local cache directory (.cache/fastembed)\n   - Export any necessary environment variables (PYTHONPATH if needed)\n3. Ensure the shell provides:\n   - Access to all development dependencies\n   - The qdrant-indexer command in PATH\n   - uv for dependency management\n4. Consider adding pre-commit hooks or development utilities\n5. Make sure the virtual environment is properly activated",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run 'nix develop' successfully, verify uv is available, verify qdrant-indexer command works, test that fastembed model caching works in a writable location",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:11:01.336Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T14:11:01.336Z"
       },
       {
         "id": "9",
@@ -573,9 +578,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:05:50.635Z",
+      "lastModified": "2025-12-08T14:11:01.336Z",
       "taskCount": 13,
-      "completedCount": 6,
+      "completedCount": 7,
       "tags": [
         "master"
       ]
