@@ -44,7 +44,11 @@ class QdrantIndexer:
         """
         self.client = QdrantClient(url=qdrant_url)
         self.collection = collection_name
-        self.embeddings = TextEmbedding(model_name=embedding_model)
+        # Explicitly use CPU provider to avoid GPU initialization warnings
+        self.embeddings = TextEmbedding(
+            model_name=embedding_model,
+            providers=["CPUExecutionProvider"],
+        )
         self._vector_size = 384  # all-MiniLM-L6-v2 dimension
         self._vector_name = "fast-all-minilm-l6-v2"  # Required by qdrant-mcp
         logger.debug(f"Initialized indexer for collection '{collection_name}' at {qdrant_url}")
