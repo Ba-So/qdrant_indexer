@@ -294,7 +294,7 @@
         "description": "Create the command-line interface in src/qdrant_indexer/cli.py using Typer with commands for indexing, listing, and deleting collections.",
         "details": "1. Create Typer app instance\n2. Implement 'index' command:\n   - Arguments: path (directory to index)\n   - Options: --collection, --url (default localhost:6333), --chunk-size, --chunk-overlap, --pattern, --batch-size, --exclude\n   - Progress output with rich\n3. Implement 'list-collections' command:\n   - Option: --url\n   - Display all collections with counts\n4. Implement 'delete-collection' command:\n   - Arguments: collection name\n   - Options: --url, --yes/-y (skip confirmation)\n   - Confirmation prompt using typer.confirm()\n5. Implement 'reindex' command:\n   - Delete existing collection data for source files, then re-index\n6. Add rich console output for progress and status messages\n7. Handle errors gracefully with helpful messages",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "5"
         ],
@@ -306,9 +306,10 @@
             "description": "Set up the basic Typer application structure in src/qdrant_indexer/cli.py with imports, app instance, and main entry point",
             "dependencies": [],
             "details": "Create src/qdrant_indexer/cli.py with:\n- Import statements: typer, Path from pathlib, rich.console for Console\n- Create Typer app instance: app = typer.Typer(help=\"Qdrant Indexer - Index documentation into Qdrant collections\")\n- Add main() function with if __name__ == \"__main__\": app()\n- Import QdrantIndexer from indexer module\n- Import RecursiveChunker from chunkers module\n- Import QdrantClient from qdrant_client\n- Set up basic type hints and structure for commands\n- Add module-level docstring explaining the CLI tool purpose\n\nThis provides the foundation for all CLI commands and ensures proper entry point configuration matching the pyproject.toml script definition.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify Typer app can be instantiated and run with --help flag, check that imports resolve correctly",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:05:50.627Z"
           },
           {
             "id": 2,
@@ -318,9 +319,10 @@
               1
             ],
             "details": "Implement @app.command() decorated function index() with:\n- Required argument: path: Path (directory to index)\n- Options:\n  * --collection: str (required, collection name)\n  * --url: str (default=\"http://localhost:6333\", Qdrant server URL)\n  * --chunk-size: int (default=512, chunk size in characters)\n  * --chunk-overlap: int (default=50, overlap between chunks)\n  * --pattern: str (default=\"**/*.{md,rst,txt,pdf}\", glob pattern for files)\n  * --batch-size: int (default=100, batch size for uploads)\n  * --exclude: List[str] (default=None, patterns to exclude)\n- Logic:\n  1. Validate path exists and is a directory\n  2. Create QdrantIndexer instance with url and collection\n  3. Call ensure_collection() to create collection if needed\n  4. Create RecursiveChunker with chunk_size and chunk_overlap\n  5. Call index_directory() with path, pattern, chunker, batch_size\n  6. Use rich Console to display progress and results\n  7. Show summary: files processed, chunks created, time elapsed\n- Error handling: wrap in try/except, display helpful error messages with rich\n- Add comprehensive docstring with parameter descriptions and usage examples",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with sample directory, verify all options work correctly, test error handling with invalid paths, verify chunking parameters are passed correctly, check rich output formatting",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:05:50.630Z"
           },
           {
             "id": 3,
@@ -330,9 +332,10 @@
               1
             ],
             "details": "Implement @app.command(name=\"list-collections\") decorated function list_collections() with:\n- Options:\n  * --url: str (default=\"http://localhost:6333\", Qdrant server URL)\n- Logic:\n  1. Create QdrantClient instance with url\n  2. Call client.get_collections() to retrieve all collections\n  3. For each collection, get collection info with client.get_collection(name) to get point count\n  4. Use rich.table.Table to create formatted output with columns: Collection Name, Points Count, Vector Size\n  5. Display table using rich Console\n- Error handling:\n  * Catch connection errors if Qdrant server is unreachable\n  * Display helpful message if no collections exist\n  * Handle API errors gracefully\n- Add docstring explaining the command purpose\n- Format output to be readable and informative\n\nThis command helps users see what collections are available and their sizes before indexing or querying.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test against Qdrant instance with collections, verify table formatting, test with no collections, test connection error handling, verify point counts are accurate",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:05:50.631Z"
           },
           {
             "id": 4,
@@ -342,9 +345,10 @@
               1
             ],
             "details": "Implement @app.command(name=\"delete-collection\") decorated function delete_collection() with:\n- Required argument: collection: str (name of collection to delete)\n- Options:\n  * --url: str (default=\"http://localhost:6333\", Qdrant server URL)\n  * --yes / -y: bool (default=False, skip confirmation prompt)\n- Logic:\n  1. Create QdrantClient instance with url\n  2. Check if collection exists with client.collection_exists(collection)\n  3. If not exists, display error message and exit\n  4. If --yes flag not provided:\n     - Use typer.confirm(f\"Are you sure you want to delete collection '{collection}'?\", abort=True)\n     - This will abort execution if user declines\n  5. Call client.delete_collection(collection)\n  6. Display success message with rich console: \"✓ Deleted collection '{collection}'\"\n- Error handling:\n  * Catch collection not found errors\n  * Handle connection errors\n  * Display clear error messages with typer.echo()\n- Add warning styling to confirmation prompt using rich\n- Add docstring with safety warnings\n\nThis ensures users don't accidentally delete important collections without confirmation.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test confirmation prompt behavior, verify --yes flag bypasses prompt, test with non-existent collection, verify successful deletion, test abort behavior when user declines",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:05:50.633Z"
           },
           {
             "id": 5,
@@ -356,11 +360,13 @@
               4
             ],
             "details": "Enhance all CLI commands with robust error handling and rich output:\n1. Create helper function display_error(message: str) that uses rich Console to show formatted errors\n2. Create helper function display_success(message: str) for success messages with ✓ checkmark\n3. Wrap all command logic in try/except blocks:\n   - Catch QdrantException for Qdrant-specific errors\n   - Catch ConnectionError for network issues\n   - Catch FileNotFoundError for missing paths\n   - Catch ValueError for invalid parameters\n   - Catch general Exception as fallback\n4. Add rich Progress context manager to index command:\n   - Show progress bar for file discovery\n   - Show progress bar for indexing with file names\n   - Update progress as files are processed\n5. Add rich Panel for summary output:\n   - Total files processed\n   - Total chunks created\n   - Time elapsed\n   - Any errors encountered\n6. Use rich.traceback.install() for better exception formatting in development\n7. Add --verbose flag to index command for detailed logging\n8. Ensure all error messages are actionable (suggest fixes)\n\nThis makes the CLI user-friendly with clear feedback and professional-looking output.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test error scenarios: invalid URLs, missing directories, connection failures; verify rich formatting is correct; test progress bars with large directories; verify verbose output shows detailed information",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:05:50.634Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T14:05:50.634Z"
       },
       {
         "id": "7",
@@ -567,9 +573,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:02:55.390Z",
+      "lastModified": "2025-12-08T14:05:50.635Z",
       "taskCount": 13,
-      "completedCount": 5,
+      "completedCount": 6,
       "tags": [
         "master"
       ]
