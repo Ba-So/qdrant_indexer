@@ -196,6 +196,27 @@ This tool uses [FastEmbed](https://github.com/qdrant/fastembed) with the `senten
 
 This is compatible with [qdrant-mcp](https://github.com/qdrant/mcp-server-qdrant) when configured with the same embedding model.
 
+## Development
+
+### Running Tests
+
+```bash
+# Run unit tests only
+uv run pytest -m "not integration"
+
+# Run integration tests (requires Qdrant)
+docker compose up -d
+uv run pytest -m integration
+
+# Run all tests
+uv run pytest
+```
+
+### Test Coverage
+
+- **Unit tests** (`tests/test_*.py` except integration): Test loaders, chunkers, and indexer with mocked dependencies
+- **Integration tests** (`tests/test_integration.py`): Test full pipeline against real Qdrant instance
+
 ## Troubleshooting
 
 ### Connection refused to Qdrant

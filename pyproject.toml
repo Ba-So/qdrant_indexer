@@ -28,3 +28,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/qdrant_indexer"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests (require running Qdrant)",
+]
+testpaths = ["tests"]

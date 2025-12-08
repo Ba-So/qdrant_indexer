@@ -453,7 +453,7 @@
         "description": "Create comprehensive unit tests for loaders, chunkers, and indexer components in tests/ directory.",
         "details": "1. Add pytest and pytest-cov to dev dependencies\n2. Create tests/ directory structure:\n   - tests/__init__.py\n   - tests/conftest.py (fixtures)\n   - tests/test_loaders.py\n   - tests/test_chunkers.py\n   - tests/test_indexer.py\n3. Test loaders:\n   - Test each loader with sample files\n   - Test metadata extraction\n   - Test error handling for missing/invalid files\n4. Test chunkers:\n   - Test RecursiveChunker with various text sizes\n   - Verify chunk sizes respect limits\n   - Verify overlap is maintained\n   - Test edge cases (empty text, text smaller than chunk_size)\n5. Test indexer:\n   - Mock Qdrant client for unit tests\n   - Test collection creation\n   - Test point generation\n   - Test batch uploading logic\n6. Create test fixtures with sample documents",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "3",
           "4",
@@ -521,7 +521,8 @@
             "testStrategy": "Run pytest tests/test_indexer.py with coverage. Aim for >90% coverage of indexer.py. Mock all external dependencies (Qdrant, FastEmbed). Verify integration between loaders, chunkers, and indexer. Use caplog to verify logging output.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T14:32:03.693Z"
       },
       {
         "id": "10",
@@ -529,12 +530,13 @@
         "description": "Create integration tests that test the full indexing pipeline against a real Qdrant instance.",
         "details": "1. Create tests/test_integration.py\n2. Add pytest markers for integration tests (can be skipped if Qdrant unavailable)\n3. Test full workflow:\n   - Create test documents in tmp_path\n   - Index documents to test collection\n   - Verify documents are searchable\n   - Clean up test collection\n4. Test CLI commands:\n   - Test index command with subprocess\n   - Test list-collections\n   - Test delete-collection\n5. Add docker-compose.yml or instructions for running Qdrant locally\n6. Configure CI to optionally run integration tests",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "9"
         ],
         "priority": "low",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-08T14:36:44.767Z"
       },
       {
         "id": "11",
@@ -582,9 +584,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:25:52.056Z",
+      "lastModified": "2025-12-08T14:36:44.767Z",
       "taskCount": 13,
-      "completedCount": 11,
+      "completedCount": 13,
       "tags": [
         "master"
       ]
