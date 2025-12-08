@@ -215,7 +215,7 @@
         "description": "Create the main QdrantIndexer class in src/qdrant_indexer/indexer.py that orchestrates document loading, chunking, embedding, and uploading to Qdrant.",
         "details": "1. Create QdrantIndexer class with:\n   - __init__(qdrant_url, collection_name, embedding_model=\"sentence-transformers/all-MiniLM-L6-v2\")\n   - Initialize QdrantClient and FastEmbed TextEmbedding\n2. Implement ensure_collection() method:\n   - Check if collection exists with client.collection_exists()\n   - Create with vectors_config: size=384 (all-MiniLM-L6-v2), distance=Cosine\n3. Implement index_directory() method:\n   - Parameters: path, pattern, chunker, batch_size\n   - Glob files matching pattern\n   - For each file: load with appropriate loader, chunk, embed, create points\n   - Batch upload with client.upsert()\n   - Include progress reporting\n4. Implement index_file() method for single file indexing\n5. Create point ID generation (hash of file path + chunk index)\n6. Build payload with: text, source, chunk_index, total_chunks, timestamp, metadata",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "3",
           "4"
@@ -228,9 +228,10 @@
             "description": "Create src/qdrant_indexer/indexer.py with the QdrantIndexer class constructor that initializes QdrantClient and FastEmbed TextEmbedding",
             "dependencies": [],
             "details": "Create the QdrantIndexer class in src/qdrant_indexer/indexer.py with:\n- Import statements: QdrantClient from qdrant_client, TextEmbedding from fastembed, and necessary types\n- Constructor __init__(self, qdrant_url: str, collection_name: str, embedding_model: str = \"sentence-transformers/all-MiniLM-L6-v2\")\n- Initialize self.client = QdrantClient(url=qdrant_url)\n- Initialize self.embeddings = TextEmbedding(embedding_model)\n- Store self.collection = collection_name\n- Add type hints for all parameters and class attributes\n- Add comprehensive docstring explaining the class purpose and parameters\n- Import Path from pathlib, datetime, and hashlib for future methods",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify that QdrantIndexer can be instantiated with default and custom parameters, check that QdrantClient and TextEmbedding are properly initialized",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:02:55.383Z"
           },
           {
             "id": 2,
@@ -240,9 +241,10 @@
               1
             ],
             "details": "Implement ensure_collection(self) method in QdrantIndexer class:\n- Use self.client.collection_exists(self.collection) to check if collection exists\n- If not exists, create collection with self.client.create_collection()\n- Configure vectors_config with: size=384 (for all-MiniLM-L6-v2 embeddings), distance=\"Cosine\"\n- Import VectorParams and Distance from qdrant_client.models if needed for type safety\n- Add error handling for collection creation failures\n- Add docstring explaining the vector configuration\n- Log collection creation or skip if already exists",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with mock QdrantClient to verify collection_exists is called, verify create_collection is called with correct vector config when collection doesn't exist, verify method is idempotent",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:02:55.384Z"
           },
           {
             "id": 3,
@@ -252,9 +254,10 @@
               2
             ],
             "details": "Implement index_file(self, file_path: Path, chunker: Chunker, batch_size: int = 100) -> int method:\n- Import get_loader from loaders module to get appropriate loader for file type\n- Load document: loader = get_loader(file_path); doc = loader.load(file_path)\n- Chunk content: chunks = chunker.chunk(doc.content)\n- For each chunk with index i:\n  - Generate embedding: vector = list(self.embeddings.embed([chunk])[0])\n  - Create point ID using hashlib: point_id = hash(f\"{file_path}-{i}\") & 0x7FFFFFFFFFFFFFFF (ensure positive int64)\n  - Build payload dict with: text=chunk, source=str(file_path), chunk_index=i, total_chunks=len(chunks), timestamp=datetime.now().isoformat(), **doc.metadata\n  - Append to batch list\n- Batch upload when len(batch) >= batch_size using self.client.upsert()\n- Upload remaining batch if any\n- Return total number of chunks processed\n- Add comprehensive error handling and logging",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with sample files of different types, verify correct number of points created, verify point IDs are consistent and positive, verify payloads contain all required fields, test batch uploading logic",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:02:55.386Z"
           },
           {
             "id": 4,
@@ -264,9 +267,10 @@
               3
             ],
             "details": "Implement index_directory(self, path: Path, pattern: str = \"**/*.{md,rst,txt,pdf}\", chunker: Chunker = None, batch_size: int = 100) -> dict method:\n- If chunker is None, create default: from chunkers import RecursiveChunker; chunker = RecursiveChunker()\n- Use path.glob(pattern) to find all matching files\n- Initialize counters: total_files=0, total_chunks=0, failed_files=[]\n- For each file_path in matching files:\n  - Try: chunks_count = self.index_file(file_path, chunker, batch_size)\n  - Update total_files += 1 and total_chunks += chunks_count\n  - Print progress: f\"Processed {file_path.name}: {chunks_count} chunks\"\n  - Except: log error and append to failed_files\n- Return summary dict with: {\"total_files\": total_files, \"total_chunks\": total_chunks, \"failed_files\": failed_files}\n- Add docstring with parameter explanations and return value description\n- Consider using rich.progress for better progress reporting in future enhancement",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with directory containing multiple file types, verify all matching files are processed, verify pattern matching works correctly, test error handling with invalid files, verify summary statistics are accurate",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:02:55.388Z"
           },
           {
             "id": 5,
@@ -276,11 +280,13 @@
               3
             ],
             "details": "Add helper methods to QdrantIndexer class:\n1. _generate_point_id(self, file_path: Path, chunk_index: int) -> int:\n   - Create stable hash from f\"{file_path}-{chunk_index}\"\n   - Use hashlib.sha256 for better distribution than built-in hash\n   - Convert to int64 and ensure positive: int.from_bytes(hash_obj.digest()[:8], 'big') & 0x7FFFFFFFFFFFFFFF\n   - Return the point ID\n2. _build_payload(self, chunk: str, file_path: Path, chunk_index: int, total_chunks: int, metadata: dict) -> dict:\n   - Create payload dict with required fields: text, source, chunk_index, total_chunks, timestamp\n   - Merge with additional metadata from document loader\n   - Validate that text is not empty and source path is valid\n   - Return validated payload dict\n3. Refactor index_file() to use these helper methods for cleaner code\n- Add comprehensive docstrings for both helper methods\n- Make methods private with leading underscore since they're internal utilities",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test _generate_point_id produces consistent IDs for same inputs, test IDs are always positive int64, test _build_payload creates valid payload structure, verify all required fields are present, test with various metadata combinations",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:02:55.390Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T14:02:55.390Z"
       },
       {
         "id": "6",
@@ -561,9 +567,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:01:18.055Z",
+      "lastModified": "2025-12-08T14:02:55.390Z",
       "taskCount": 13,
-      "completedCount": 4,
+      "completedCount": 5,
       "tags": [
         "master"
       ]
