@@ -148,7 +148,7 @@
         "description": "Create text chunking implementations in src/qdrant_indexer/chunkers.py with recursive character splitting as the primary strategy.",
         "details": "1. Create abstract base Chunker class with chunk(text: str) -> List[str] method\n2. Implement RecursiveChunker (primary strategy):\n   - Parameters: chunk_size (default 512), overlap (default 50)\n   - Split hierarchy: \\n\\n (paragraphs) -> \\n (lines) -> . (sentences) -> space (words)\n   - Ensure chunks don't exceed chunk_size\n   - Maintain overlap between consecutive chunks for context continuity\n3. Implement FixedSizeChunker (simple alternative):\n   - Split text into fixed-size chunks with overlap\n   - No semantic awareness\n4. Create helper functions:\n   - split_text_with_overlap(text, size, overlap)\n   - merge_small_chunks(chunks, min_size)\n5. Consider adding SemanticChunker placeholder for future enhancement",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "2"
         ],
@@ -160,9 +160,10 @@
             "description": "Define the abstract base class for all chunking strategies in src/qdrant_indexer/chunkers.py with the core chunk() method interface",
             "dependencies": [],
             "details": "Create an abstract base class (ABC) named Chunker with:\n- Import ABC and abstractmethod from abc module\n- Define abstract method: chunk(text: str) -> List[str]\n- Add docstring explaining the chunker interface\n- Add type hints for all methods\nThis provides the foundation for all chunking strategy implementations and ensures a consistent interface across different chunking approaches.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify that the abstract class cannot be instantiated directly and that concrete implementations must implement the chunk() method",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:01:18.049Z"
           },
           {
             "id": 2,
@@ -172,9 +173,10 @@
               1
             ],
             "details": "Implement RecursiveChunker(Chunker) with:\n- Constructor parameters: chunk_size (default 512), overlap (default 50)\n- Implement chunk() method with split hierarchy:\n  1. First try splitting by '\\n\\n' (paragraphs)\n  2. If chunks too large, split by '\\n' (lines)\n  3. If still too large, split by '. ' (sentences)\n  4. Finally split by space (words) as last resort\n- Ensure no chunk exceeds chunk_size\n- Maintain overlap between consecutive chunks for context continuity\n- Handle edge cases: empty text, text smaller than chunk_size\n- Add logic to recursively process chunks that are still too large\n- Return list of text chunks with proper overlap",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with various text lengths, verify chunk sizes stay within limits, verify overlap is maintained, test each split level (paragraphs, lines, sentences, words)",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:01:18.051Z"
           },
           {
             "id": 3,
@@ -184,9 +186,10 @@
               1
             ],
             "details": "Implement FixedSizeChunker(Chunker) with:\n- Constructor parameters: chunk_size (default 512), overlap (default 50)\n- Implement chunk() method that:\n  1. Splits text into fixed-size chunks based on chunk_size\n  2. Applies overlap by including the last 'overlap' characters from previous chunk\n  3. Handles edge cases: empty text, text smaller than chunk_size\n- No semantic awareness - purely character-based splitting\n- Return list of text chunks with specified overlap\nThis provides a simpler, faster alternative when semantic boundaries are not important.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with various text lengths, verify exact chunk sizes, verify overlap calculations, test edge cases like empty text and small text",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:01:18.052Z"
           },
           {
             "id": 4,
@@ -198,11 +201,13 @@
               3
             ],
             "details": "Implement helper functions in chunkers.py:\n1. split_text_with_overlap(text: str, size: int, overlap: int) -> List[str]:\n   - Generic function to split text into chunks of given size\n   - Apply overlap between consecutive chunks\n   - Used by both RecursiveChunker and FixedSizeChunker\n2. merge_small_chunks(chunks: List[str], min_size: int) -> List[str]:\n   - Merge consecutive chunks that are smaller than min_size\n   - Prevent having many tiny chunks that lack context\n   - Ensure merged chunks don't exceed reasonable size\n3. Optional: Add SemanticChunker class stub with NotImplementedError for future enhancement\n- Add comprehensive docstrings with usage examples\n- Add type hints for all parameters",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test split_text_with_overlap with various size/overlap combinations, test merge_small_chunks with different chunk sizes and minimum thresholds",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-08T14:01:18.054Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-08T14:01:18.054Z"
       },
       {
         "id": "5",
@@ -556,9 +561,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T13:55:29.850Z",
+      "lastModified": "2025-12-08T14:01:18.055Z",
       "taskCount": 13,
-      "completedCount": 3,
+      "completedCount": 4,
       "tags": [
         "master"
       ]
