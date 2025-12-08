@@ -542,13 +542,14 @@
         "description": "Write comprehensive README.md with installation instructions, usage examples, and configuration documentation.",
         "details": "1. Create README.md with sections:\n   - Project overview and purpose\n   - Installation (Nix flake, pip/uv)\n   - Quick start guide\n   - CLI command reference with examples\n   - Configuration file format\n   - Supported file formats\n   - Integration with qdrant-mcp\n2. Add examples/ directory:\n   - examples/index-docs.sh (basic usage script)\n   - examples/config/.qdrant-indexer.toml (sample config)\n3. Document embedding model compatibility with qdrant-mcp\n4. Add troubleshooting section for common issues",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "6",
           "8"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-08T14:25:52.056Z"
       },
       {
         "id": "12",
@@ -581,9 +582,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:20:47.965Z",
+      "lastModified": "2025-12-08T14:25:52.056Z",
       "taskCount": 13,
-      "completedCount": 10,
+      "completedCount": 11,
       "tags": [
         "master"
       ]
