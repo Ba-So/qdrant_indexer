@@ -3,3 +3,4 @@
 .envrc
 .mcp.json
 .claude
+__pycache__

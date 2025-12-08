@@ -64,12 +64,13 @@
         "description": "Create the core data structures for representing documents and their metadata in src/qdrant_indexer/models.py",
         "details": "Create dataclasses/Pydantic models:\n1. Document class with fields:\n   - content: str (the text content)\n   - metadata: dict (source file, frontmatter, etc.)\n   - source_path: Path (original file path)\n2. Chunk class with fields:\n   - text: str (chunk content)\n   - index: int (chunk position)\n   - total_chunks: int\n   - metadata: dict (inherited from document + chunk-specific)\n3. IndexedPoint class representing a Qdrant point:\n   - id: str/int\n   - vector: list[float]\n   - payload: dict",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "1"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-08T13:53:30.239Z"
       },
       {
         "id": "3",
@@ -549,9 +550,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T13:49:36.920Z",
+      "lastModified": "2025-12-08T13:53:30.239Z",
       "taskCount": 13,
-      "completedCount": 1,
+      "completedCount": 2,
       "tags": [
         "master"
       ]
