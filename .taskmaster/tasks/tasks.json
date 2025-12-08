@@ -580,13 +580,885 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2025-12-08T14:20:47.965Z"
+      },
+      {
+        "id": "14",
+        "title": "Add tree-sitter dependencies to pyproject.toml",
+        "description": "Install tree-sitter and tree-sitter-php packages required for PHP code parsing",
+        "details": "Update pyproject.toml to add the following dependencies:\n- tree-sitter>=0.21.0 (required for PHP parsing)\n- tree-sitter-php>=0.22.0 (PHP grammar for tree-sitter)\n- tree-sitter-python>=0.21.0 (optional dev dependency for testing Python parsing comparison)\n\nAdd to [project.dependencies] section:\n```toml\n\"tree-sitter>=0.21.0\",\n\"tree-sitter-php>=0.22.0\",\n```\n\nAdd to [project.optional-dependencies.dev] section:\n```toml\n\"tree-sitter-python>=0.21.0\",\n```\n\nAfter updating, run `uv sync` to install the new dependencies.",
+        "testStrategy": "Verify installation by running `uv sync` successfully and importing tree_sitter and tree_sitter_php in Python REPL without errors",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add tree-sitter core dependency to pyproject.toml",
+            "description": "Add tree-sitter>=0.21.0 to the [project.dependencies] section of pyproject.toml for core tree-sitter parsing functionality",
+            "dependencies": [],
+            "details": "Edit /home/baso/dev/qdrant_indexer/pyproject.toml and add \"tree-sitter>=0.21.0\", to the dependencies array after line 14. This is the core tree-sitter library required for all language parsing functionality. Place it after the existing dependencies but before the closing bracket.",
+            "status": "pending",
+            "testStrategy": "After adding, verify the dependency is correctly formatted TOML syntax by checking the file can be parsed without errors",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add tree-sitter-php dependency to pyproject.toml",
+            "description": "Add tree-sitter-php>=0.22.0 to the [project.dependencies] section for PHP code parsing support",
+            "dependencies": [
+              1
+            ],
+            "details": "Edit /home/baso/dev/qdrant_indexer/pyproject.toml and add \"tree-sitter-php>=0.22.0\", to the dependencies array immediately after the tree-sitter dependency. This provides the PHP-specific grammar for tree-sitter parsing. Ensure proper TOML array formatting with comma separation.",
+            "status": "pending",
+            "testStrategy": "Verify TOML syntax is valid and both tree-sitter dependencies are listed in the dependencies array in pyproject.toml:7-14",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Add tree-sitter-python to dev dependencies",
+            "description": "Add tree-sitter-python>=0.21.0 to [project.optional-dependencies.dev] section for testing Python parsing comparison",
+            "dependencies": [
+              2
+            ],
+            "details": "Edit /home/baso/dev/qdrant_indexer/pyproject.toml and add \"tree-sitter-python>=0.21.0\", to the dev dependencies array at pyproject.toml:17-20, after pytest-cov. This is an optional dev dependency used for testing and comparing Python parsing capabilities. Maintain the existing indentation and formatting style.",
+            "status": "pending",
+            "testStrategy": "Verify the dev dependencies array contains all three items (pytest, pytest-cov, tree-sitter-python) with correct formatting",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Run uv sync to install dependencies",
+            "description": "Execute 'uv sync' command to install the newly added tree-sitter dependencies into the virtual environment",
+            "dependencies": [
+              3
+            ],
+            "details": "Run the command 'uv sync' from the project root /home/baso/dev/qdrant_indexer to synchronize and install all dependencies including the newly added tree-sitter packages. The uv package manager is available at /nix/store/6a10dxw6aqm9xhygpbi7swhc7lppvmbq-uv-0.7.22/bin/uv. This will download and install tree-sitter, tree-sitter-php, and tree-sitter-python packages.",
+            "status": "pending",
+            "testStrategy": "Verify uv sync completes successfully without errors and reports the tree-sitter packages as installed",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Verify tree-sitter imports in Python REPL",
+            "description": "Test that tree_sitter and tree_sitter_php can be imported successfully in Python to confirm proper installation",
+            "dependencies": [
+              4
+            ],
+            "details": "Launch a Python REPL using the project's virtual environment and attempt to import tree_sitter and tree_sitter_php modules. Execute: 'python -c \"import tree_sitter; import tree_sitter_php; print('Successfully imported tree-sitter packages')\"' from the project directory. This confirms the packages are installed correctly and accessible to Python code.",
+            "status": "pending",
+            "testStrategy": "Verify both imports succeed without ImportError and the success message is printed, confirming tree-sitter and tree-sitter-php are properly installed and importable",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "15",
+        "title": "Create CodeSymbol model in models.py",
+        "description": "Add CodeSymbol dataclass to represent extracted code symbols with metadata",
+        "details": "Add the following dataclass to src/qdrant_indexer/models.py:\n\n```python\n@dataclass\nclass CodeSymbol:\n    \"\"\"Represents an extracted code symbol (function, class, method, constant).\n    \n    Attributes:\n        name: Symbol name (e.g., 'parse_segment')\n        qualified_name: Fully qualified name (e.g., 'MyClass.parse_segment')\n        symbol_type: Type of symbol ('function', 'class', 'method', 'constant')\n        content: Full source code of the symbol\n        docstring: Extracted documentation (docstring/PHPDoc)\n        signature: Function/method signature (e.g., '(data: bytes) -> Segment')\n        line_start: Starting line number in source file\n        line_end: Ending line number in source file\n        parent: Parent class name for methods, None for top-level symbols\n        visibility: Access modifier for PHP ('public', 'private', 'protected'), None for Python\n        language: Source language ('python' or 'php')\n        metadata: Additional language-specific metadata\n    \"\"\"\n    name: str\n    qualified_name: str\n    symbol_type: str\n    content: str\n    docstring: str | None\n    signature: str | None\n    line_start: int\n    line_end: int\n    parent: str | None\n    visibility: str | None\n    language: str\n    metadata: dict[str, Any] = field(default_factory=dict)\n```\n\nThis model will be used by both PythonCodeLoader and PHPCodeLoader to represent extracted symbols before chunking.",
+        "testStrategy": "Create unit test that instantiates CodeSymbol with various symbol types (function, class, method) and verifies all fields are correctly stored and accessible",
+        "priority": "high",
+        "dependencies": [
+          "14"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Import required dependencies in models.py",
+            "description": "Ensure all necessary imports are present at the top of models.py for the CodeSymbol dataclass",
+            "dependencies": [],
+            "details": "Verify that models.py has the required imports: 'from dataclasses import dataclass, field' and 'from typing import Any'. These are already present in the file based on lines 3-5, so this subtask confirms the imports are in place before adding the new CodeSymbol class.",
+            "status": "pending",
+            "testStrategy": "Visual inspection of imports section - verify dataclass, field from dataclasses and Any from typing are imported",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add CodeSymbol dataclass definition to models.py",
+            "description": "Add the complete CodeSymbol dataclass with all required fields after the existing Chunk dataclass",
+            "dependencies": [
+              1
+            ],
+            "details": "Insert the CodeSymbol dataclass at the end of src/qdrant_indexer/models.py (after line 53). The class should include all 12 fields with proper type annotations: name (str), qualified_name (str), symbol_type (str), content (str), docstring (str | None), signature (str | None), line_start (int), line_end (int), parent (str | None), visibility (str | None), language (str), and metadata (dict[str, Any] with default_factory). Follow the same formatting style as Document and Chunk classes.",
+            "status": "pending",
+            "testStrategy": "Verify the class can be imported with 'from qdrant_indexer.models import CodeSymbol' and all fields are accessible",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Add comprehensive docstring to CodeSymbol class",
+            "description": "Include detailed docstring with class description and all attribute documentation",
+            "dependencies": [
+              2
+            ],
+            "details": "The docstring should describe CodeSymbol as representing an extracted code symbol (function, class, method, constant) and document all 12 attributes with examples: name (e.g., 'parse_segment'), qualified_name (e.g., 'MyClass.parse_segment'), symbol_type ('function', 'class', 'method', 'constant'), content (full source code), docstring (extracted documentation), signature (e.g., '(data: bytes) -> Segment'), line_start/line_end (line numbers), parent (parent class name or None), visibility ('public', 'private', 'protected' for PHP, None for Python), language ('python' or 'php'), and metadata (additional language-specific metadata dict).",
+            "status": "pending",
+            "testStrategy": "Verify docstring is complete by checking help(CodeSymbol) output includes all attribute descriptions",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Create unit test file for CodeSymbol model",
+            "description": "Create tests/test_models.py with test cases for CodeSymbol instantiation and field access",
+            "dependencies": [
+              3
+            ],
+            "details": "Create new file tests/test_models.py following the testing patterns from test_loaders.py. Include test class TestCodeSymbol with test methods: test_python_function_symbol() to create a Python function CodeSymbol and verify all fields, test_php_method_symbol() to create a PHP method with visibility and parent class, test_class_symbol() to test a class type symbol, and test_metadata_default_factory() to verify metadata defaults to empty dict and is mutable per instance. Each test should instantiate CodeSymbol with realistic values matching the symbol type being tested.",
+            "status": "pending",
+            "testStrategy": "Run pytest tests/test_models.py and verify all tests pass with 100% coverage of CodeSymbol instantiation",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Verify CodeSymbol integrates with existing models",
+            "description": "Ensure CodeSymbol can be imported and used alongside existing Document and Chunk models",
+            "dependencies": [
+              4
+            ],
+            "details": "Update src/qdrant_indexer/models.py module docstring if needed to mention CodeSymbol. Verify the model can be imported in __init__.py exports if models are re-exported at package level. Test that CodeSymbol instances can coexist with Document and Chunk instances in the same codebase without conflicts. Confirm the model follows the same dataclass patterns as existing models (uses field(default_factory=dict) for mutable defaults).",
+            "status": "pending",
+            "testStrategy": "Import all models together with 'from qdrant_indexer.models import Document, Chunk, CodeSymbol' and instantiate one of each type to verify no conflicts",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "16",
+        "title": "Create code_loaders package and base CodeLoader class",
+        "description": "Create new code_loaders package with abstract base class for code-aware document loaders",
+        "details": "Create directory structure:\n```\nsrc/qdrant_indexer/code_loaders/\n├── __init__.py\n├── base.py\n├── python.py (placeholder)\n└── php.py (placeholder)\n```\n\nIn base.py, create CodeLoader abstract class extending DocumentLoader:\n\n```python\nfrom abc import abstractmethod\nfrom pathlib import Path\nfrom qdrant_indexer.loaders import DocumentLoader\nfrom qdrant_indexer.models import Document, CodeSymbol\n\nclass CodeLoader(DocumentLoader):\n    \"\"\"Abstract base class for code-aware document loaders.\"\"\"\n    \n    @abstractmethod\n    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:\n        \"\"\"Extract code symbols from source content.\n        \n        Args:\n            content: Source code as string\n            file_path: Path to source file for error reporting\n            \n        Returns:\n            List of extracted CodeSymbol objects\n        \"\"\"\n        pass\n    \n    @abstractmethod\n    def get_symbol_context(self, symbol: CodeSymbol) -> str:\n        \"\"\"Get searchable context for a symbol (signature + docstring).\n        \n        Args:\n            symbol: The code symbol\n            \n        Returns:\n            Formatted context string for embedding\n        \"\"\"\n        pass\n    \n    def load(self, path: Path) -> Document:\n        \"\"\"Load source file and extract symbols.\"\"\"\n        content = path.read_text(encoding='utf-8')\n        symbols = self.extract_symbols(content, path)\n        # Store symbols in metadata for chunker to access\n        return Document(\n            content=content,\n            source_path=path,\n            metadata={\n                'filename': path.name,\n                'extension': path.suffix,\n                'symbols': symbols,\n                'is_code': True,\n            }\n        )\n```\n\nIn __init__.py, export CodeLoader:\n```python\nfrom .base import CodeLoader\n\n__all__ = ['CodeLoader']\n```",
+        "testStrategy": "Verify package structure exists and CodeLoader can be imported. Test that load() method skeleton works by creating a minimal concrete implementation",
+        "priority": "high",
+        "dependencies": [
+          "15"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add CodeSymbol model to models.py",
+            "description": "Create the CodeSymbol dataclass in models.py to represent code symbols extracted from source files",
+            "dependencies": [],
+            "details": "Add a new @dataclass CodeSymbol to src/qdrant_indexer/models.py following the existing patterns (Document, Chunk, IndexedPoint). Include fields: name (str), kind (str) for symbol type (function/class/method), line_start (int), line_end (int), signature (str), docstring (str | None), and file_path (Path). This model will store metadata about extracted code symbols.",
+            "status": "pending",
+            "testStrategy": "Add unit tests in tests/test_models.py (create if needed) to verify CodeSymbol can be instantiated with all required fields and that optional fields default correctly",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Create code_loaders package directory structure",
+            "description": "Set up the new code_loaders package directory with placeholder files",
+            "dependencies": [],
+            "details": "Create directory src/qdrant_indexer/code_loaders/ with files: __init__.py (initially empty), base.py (for abstract base class), python.py (placeholder with docstring comment), and php.py (placeholder with docstring comment). Follow the flat package structure used in the project (no nested packages).",
+            "status": "pending",
+            "testStrategy": "Verify directory exists and all files are created. Use pytest to import code_loaders package and verify no import errors",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement CodeLoader abstract base class in base.py",
+            "description": "Create the abstract CodeLoader class that extends DocumentLoader with code-specific methods",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "In src/qdrant_indexer/code_loaders/base.py, implement CodeLoader(DocumentLoader) following the ABC pattern from loaders.py:13. Include abstract methods: extract_symbols(content: str, file_path: Path) -> list[CodeSymbol] and get_symbol_context(symbol: CodeSymbol) -> str. Override load(path: Path) -> Document to read file content, extract symbols, and return Document with metadata containing 'symbols', 'is_code': True, 'filename', and 'extension' keys matching the pattern in loaders.py:36-42.",
+            "status": "pending",
+            "testStrategy": "Create tests/test_code_loaders.py with a minimal concrete implementation of CodeLoader. Test that load() method returns Document with correct metadata structure including 'symbols' and 'is_code' keys. Verify abstract methods raise NotImplementedError when not overridden.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Configure code_loaders package exports in __init__.py",
+            "description": "Set up the package's public API by exporting CodeLoader from the __init__.py file",
+            "dependencies": [
+              3
+            ],
+            "details": "In src/qdrant_indexer/code_loaders/__init__.py, add imports and __all__ list following the pattern used in the main package. Export only CodeLoader from base.py for now. Use absolute imports: 'from qdrant_indexer.code_loaders.base import CodeLoader' and '__all__ = ['CodeLoader']'.",
+            "status": "pending",
+            "testStrategy": "Test that 'from qdrant_indexer.code_loaders import CodeLoader' works correctly. Verify __all__ is properly defined and only exports CodeLoader. Check that the import doesn't pull in placeholder modules (python.py, php.py).",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add integration test for code_loaders package",
+            "description": "Create end-to-end test verifying the complete package structure and CodeLoader functionality",
+            "dependencies": [
+              4
+            ],
+            "details": "In tests/test_code_loaders.py, add a test class TestCodeLoaderIntegration with tests that: 1) verify package structure exists (all expected files present), 2) test CodeLoader can be imported from package root, 3) create a minimal concrete implementation that overrides abstract methods, 4) test the load() method returns a Document with is_code=True and symbols list in metadata, 5) verify the Document follows same structure as other loaders (matching patterns from test_loaders.py).",
+            "status": "pending",
+            "testStrategy": "Run pytest tests/test_code_loaders.py -v to verify all integration tests pass. Ensure test coverage includes package imports, abstract method enforcement, and Document metadata structure validation.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "17",
+        "title": "Implement PythonCodeLoader with AST parsing",
+        "description": "Create Python source code loader using ast module to extract functions, classes, methods, and docstrings",
+        "details": "Implement src/qdrant_indexer/code_loaders/python.py:\n\n```python\nimport ast\nfrom pathlib import Path\nfrom qdrant_indexer.models import CodeSymbol\nfrom .base import CodeLoader\n\nclass PythonCodeLoader(CodeLoader):\n    \"\"\"Loader for Python source files using AST parsing.\"\"\"\n    \n    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:\n        \"\"\"Extract symbols using Python's ast module.\"\"\"\n        symbols = []\n        try:\n            tree = ast.parse(content, filename=str(file_path))\n        except SyntaxError as e:\n            # Log and return empty list on syntax errors\n            import logging\n            logging.warning(f\"Syntax error in {file_path}: {e}\")\n            return []\n        \n        # Extract module-level docstring\n        module_doc = ast.get_docstring(tree)\n        if module_doc:\n            symbols.append(CodeSymbol(\n                name='__module__',\n                qualified_name=f'{file_path.stem}.__module__',\n                symbol_type='module',\n                content=module_doc,\n                docstring=module_doc,\n                signature=None,\n                line_start=1,\n                line_end=1,\n                parent=None,\n                visibility=None,\n                language='python',\n                metadata={}\n            ))\n        \n        # Walk AST to extract symbols\n        for node in ast.walk(tree):\n            if isinstance(node, ast.FunctionDef):\n                symbols.append(self._extract_function(node, content, None))\n            elif isinstance(node, ast.ClassDef):\n                symbols.append(self._extract_class(node, content))\n                # Extract methods\n                for item in node.body:\n                    if isinstance(item, ast.FunctionDef):\n                        symbols.append(self._extract_function(item, content, node.name))\n            elif isinstance(node, ast.Assign):\n                # Extract module-level constants (NAME = value pattern)\n                for target in node.targets:\n                    if isinstance(target, ast.Name) and target.id.isupper():\n                        symbols.append(self._extract_constant(node, target, content))\n        \n        return symbols\n    \n    def _extract_function(self, node: ast.FunctionDef, content: str, parent_class: str | None) -> CodeSymbol:\n        \"\"\"Extract function or method symbol.\"\"\"\n        source_lines = content.split('\\n')\n        func_source = '\\n'.join(source_lines[node.lineno-1:node.end_lineno])\n        docstring = ast.get_docstring(node)\n        \n        # Build signature\n        args = [arg.arg for arg in node.args.args]\n        sig = f\"({', '.join(args)})\"\n        if node.returns:\n            sig += f\" -> {ast.unparse(node.returns)}\"\n        \n        qualified_name = f\"{parent_class}.{node.name}\" if parent_class else node.name\n        symbol_type = 'method' if parent_class else 'function'\n        \n        return CodeSymbol(\n            name=node.name,\n            qualified_name=qualified_name,\n            symbol_type=symbol_type,\n            content=func_source,\n            docstring=docstring,\n            signature=sig,\n            line_start=node.lineno,\n            line_end=node.end_lineno or node.lineno,\n            parent=parent_class,\n            visibility=None,\n            language='python',\n            metadata={'decorator_list': [ast.unparse(d) for d in node.decorator_list]}\n        )\n    \n    def _extract_class(self, node: ast.ClassDef, content: str) -> CodeSymbol:\n        \"\"\"Extract class symbol.\"\"\"\n        source_lines = content.split('\\n')\n        class_source = '\\n'.join(source_lines[node.lineno-1:node.end_lineno])\n        docstring = ast.get_docstring(node)\n        \n        bases = [ast.unparse(base) for base in node.bases]\n        sig = f\"({', '.join(bases)})\" if bases else None\n        \n        return CodeSymbol(\n            name=node.name,\n            qualified_name=node.name,\n            symbol_type='class',\n            content=class_source,\n            docstring=docstring,\n            signature=sig,\n            line_start=node.lineno,\n            line_end=node.end_lineno or node.lineno,\n            parent=None,\n            visibility=None,\n            language='python',\n            metadata={'bases': bases}\n        )\n    \n    def _extract_constant(self, node: ast.Assign, target: ast.Name, content: str) -> CodeSymbol:\n        \"\"\"Extract constant assignment.\"\"\"\n        source_lines = content.split('\\n')\n        const_source = source_lines[node.lineno-1] if node.lineno <= len(source_lines) else \"\"\n        \n        return CodeSymbol(\n            name=target.id,\n            qualified_name=target.id,\n            symbol_type='constant',\n            content=const_source,\n            docstring=None,\n            signature=None,\n            line_start=node.lineno,\n            line_end=node.end_lineno or node.lineno,\n            parent=None,\n            visibility=None,\n            language='python',\n            metadata={}\n        )\n    \n    def get_symbol_context(self, symbol: CodeSymbol) -> str:\n        \"\"\"Format symbol for embedding.\"\"\"\n        parts = [f\"{symbol.symbol_type}: {symbol.qualified_name}\"]\n        if symbol.signature:\n            parts.append(symbol.signature)\n        if symbol.docstring:\n            parts.append(f\"\\n{symbol.docstring}\")\n        return '\\n'.join(parts)\n```\n\nUpdate code_loaders/__init__.py to export PythonCodeLoader.",
+        "testStrategy": "Unit tests: (1) Parse simple function with docstring, (2) Parse class with methods, (3) Handle syntax errors gracefully, (4) Extract various docstring formats (Google, NumPy, Sphinx), (5) Extract type annotations, (6) Extract module-level constants",
+        "priority": "high",
+        "dependencies": [
+          "16"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create code_loaders directory and __init__.py",
+            "description": "Set up the code_loaders package structure under src/qdrant_indexer/code_loaders/",
+            "dependencies": [],
+            "details": "Create directory src/qdrant_indexer/code_loaders/ and add an __init__.py file that will export the base CodeLoader class and PythonCodeLoader. The __init__.py should initially contain the package docstring and version info, with imports to be added in subtask 5 after the classes are implemented.",
+            "status": "pending",
+            "testStrategy": "Verify the directory exists and __init__.py is importable with 'import qdrant_indexer.code_loaders'",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement base CodeLoader abstract class",
+            "description": "Create src/qdrant_indexer/code_loaders/base.py with the abstract CodeLoader base class",
+            "dependencies": [
+              1
+            ],
+            "details": "Create base.py following the pattern from loaders.py DocumentLoader. Define abstract CodeLoader class with two abstract methods: extract_symbols(content: str, file_path: Path) -> list[CodeSymbol] and get_symbol_context(symbol: CodeSymbol) -> str. Import CodeSymbol from qdrant_indexer.models. Use ABC and abstractmethod from abc module. Add comprehensive docstrings explaining the purpose of each method.",
+            "status": "pending",
+            "testStrategy": "Verify the abstract class cannot be instantiated directly and that subclasses must implement both abstract methods",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement PythonCodeLoader class with AST parsing",
+            "description": "Create src/qdrant_indexer/code_loaders/python.py with full PythonCodeLoader implementation using ast module",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement the complete PythonCodeLoader class as specified in the task details. Key components: (1) extract_symbols method with try-except for syntax errors, (2) _extract_function helper for functions/methods with signature building and decorator handling, (3) _extract_class helper for class definitions with base class extraction, (4) _extract_constant helper for module-level uppercase constants, (5) get_symbol_context method to format symbols for embedding. Handle edge cases like missing docstrings, empty files, and syntax errors gracefully with logging.",
+            "status": "pending",
+            "testStrategy": "Unit tests covering: simple functions with/without docstrings, classes with methods, nested classes, syntax error handling, type annotations extraction, various decorator patterns, module-level constants",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Create comprehensive unit tests for PythonCodeLoader",
+            "description": "Create tests/test_code_loaders.py with pytest test cases covering all PythonCodeLoader functionality",
+            "dependencies": [
+              3
+            ],
+            "details": "Following the pattern from test_loaders.py, create test classes: (1) TestPythonCodeLoader with tests for simple functions, classes with methods, docstring extraction (Google/NumPy/Sphinx styles), type annotation handling, decorator extraction, module-level constants, and syntax error handling. (2) Create pytest fixtures for sample Python files with various code patterns. (3) Test edge cases: empty files, files with only imports, deeply nested classes, async functions, property decorators, class methods, static methods. Ensure at least 6 test methods as specified in the test strategy.",
+            "status": "pending",
+            "testStrategy": "All tests should pass with pytest, achieving >90% code coverage for python.py. Use tmp_path fixture to create sample Python files for testing.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Update code_loaders/__init__.py to export classes",
+            "description": "Export CodeLoader and PythonCodeLoader from the code_loaders package",
+            "dependencies": [
+              3
+            ],
+            "details": "Update src/qdrant_indexer/code_loaders/__init__.py to import and expose CodeLoader from .base and PythonCodeLoader from .python. Add __all__ list containing ['CodeLoader', 'PythonCodeLoader']. Include docstring explaining the package purpose: 'Code loaders for extracting symbols from source code files.' This follows the same pattern as the loaders package which exports its loader classes.",
+            "status": "pending",
+            "testStrategy": "Verify imports work correctly: 'from qdrant_indexer.code_loaders import CodeLoader, PythonCodeLoader' and that both classes are accessible",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "18",
+        "title": "Implement PHPCodeLoader with tree-sitter parsing",
+        "description": "Create PHP source code loader using tree-sitter-php to extract functions, classes, methods, and PHPDoc comments",
+        "details": "Implement src/qdrant_indexer/code_loaders/php.py:\n\n```python\nfrom pathlib import Path\nimport tree_sitter_php as ts_php\nfrom tree_sitter import Language, Parser\nfrom qdrant_indexer.models import CodeSymbol\nfrom .base import CodeLoader\n\nclass PHPCodeLoader(CodeLoader):\n    \"\"\"Loader for PHP source files using tree-sitter.\"\"\"\n    \n    def __init__(self):\n        self.parser = Parser()\n        self.parser.language = Language(ts_php.language())\n    \n    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:\n        \"\"\"Extract symbols using tree-sitter PHP parser.\"\"\"\n        tree = self.parser.parse(bytes(content, 'utf-8'))\n        symbols = []\n        \n        # Query for functions, classes, methods\n        query_text = '''\n        (function_definition) @function\n        (class_declaration) @class\n        (method_declaration) @method\n        (const_declaration) @constant\n        (interface_declaration) @interface\n        (trait_declaration) @trait\n        '''\n        \n        query = Language(ts_php.language()).query(query_text)\n        captures = query.captures(tree.root_node)\n        \n        for node, capture_name in captures:\n            if capture_name == 'function':\n                symbols.append(self._extract_function(node, content))\n            elif capture_name == 'class':\n                symbols.append(self._extract_class(node, content))\n            elif capture_name == 'method':\n                symbols.append(self._extract_method(node, content))\n            elif capture_name == 'constant':\n                symbols.append(self._extract_constant(node, content))\n            elif capture_name in ('interface', 'trait'):\n                symbols.append(self._extract_interface_trait(node, content, capture_name))\n        \n        return symbols\n    \n    def _extract_phpdoc(self, node, content: str) -> str | None:\n        \"\"\"Extract PHPDoc comment above a node.\"\"\"\n        # Look for comment node immediately before this node\n        prev_sibling = node.prev_sibling\n        while prev_sibling:\n            if prev_sibling.type == 'comment':\n                comment_text = content[prev_sibling.start_byte:prev_sibling.end_byte]\n                if comment_text.startswith('/**'):\n                    # Clean up PHPDoc formatting\n                    lines = comment_text.split('\\n')\n                    cleaned = []\n                    for line in lines:\n                        line = line.strip()\n                        if line.startswith('*'):\n                            line = line[1:].strip()\n                        if line and not line.startswith('/**') and not line.endswith('*/'):\n                            cleaned.append(line)\n                    return '\\n'.join(cleaned)\n            prev_sibling = prev_sibling.prev_sibling\n        return None\n    \n    def _extract_function(self, node, content: str) -> CodeSymbol:\n        \"\"\"Extract function symbol.\"\"\"\n        name_node = node.child_by_field_name('name')\n        name = content[name_node.start_byte:name_node.end_byte] if name_node else 'unknown'\n        \n        source = content[node.start_byte:node.end_byte]\n        phpdoc = self._extract_phpdoc(node, content)\n        \n        # Extract parameters for signature\n        params_node = node.child_by_field_name('parameters')\n        params = content[params_node.start_byte:params_node.end_byte] if params_node else '()'\n        \n        # Extract return type if present\n        return_type_node = node.child_by_field_name('return_type')\n        signature = params\n        if return_type_node:\n            return_type = content[return_type_node.start_byte:return_type_node.end_byte]\n            signature += f\": {return_type}\"\n        \n        return CodeSymbol(\n            name=name,\n            qualified_name=name,\n            symbol_type='function',\n            content=source,\n            docstring=phpdoc,\n            signature=signature,\n            line_start=node.start_point[0] + 1,\n            line_end=node.end_point[0] + 1,\n            parent=None,\n            visibility=None,\n            language='php',\n            metadata={}\n        )\n    \n    def _extract_class(self, node, content: str) -> CodeSymbol:\n        \"\"\"Extract class symbol.\"\"\"\n        name_node = node.child_by_field_name('name')\n        name = content[name_node.start_byte:name_node.end_byte] if name_node else 'unknown'\n        \n        source = content[node.start_byte:node.end_byte]\n        phpdoc = self._extract_phpdoc(node, content)\n        \n        # Extract extends/implements\n        base_clause = node.child_by_field_name('base_clause')\n        implements = []\n        if base_clause:\n            implements.append(content[base_clause.start_byte:base_clause.end_byte])\n        \n        return CodeSymbol(\n            name=name,\n            qualified_name=name,\n            symbol_type='class',\n            content=source,\n            docstring=phpdoc,\n            signature=None,\n            line_start=node.start_point[0] + 1,\n            line_end=node.end_point[0] + 1,\n            parent=None,\n            visibility=None,\n            language='php',\n            metadata={'implements': implements}\n        )\n    \n    def _extract_method(self, node, content: str) -> CodeSymbol:\n        \"\"\"Extract method symbol.\"\"\"\n        name_node = node.child_by_field_name('name')\n        name = content[name_node.start_byte:name_node.end_byte] if name_node else 'unknown'\n        \n        # Find parent class\n        parent_node = node.parent\n        while parent_node and parent_node.type != 'class_declaration':\n            parent_node = parent_node.parent\n        parent_class = None\n        if parent_node:\n            parent_name_node = parent_node.child_by_field_name('name')\n            parent_class = content[parent_name_node.start_byte:parent_name_node.end_byte]\n        \n        source = content[node.start_byte:node.end_byte]\n        phpdoc = self._extract_phpdoc(node, content)\n        \n        # Extract visibility (public/private/protected)\n        visibility = 'public'  # default\n        for child in node.children:\n            if child.type in ('public', 'private', 'protected'):\n                visibility = child.type\n                break\n        \n        qualified_name = f\"{parent_class}.{name}\" if parent_class else name\n        \n        return CodeSymbol(\n            name=name,\n            qualified_name=qualified_name,\n            symbol_type='method',\n            content=source,\n            docstring=phpdoc,\n            signature=None,\n            line_start=node.start_point[0] + 1,\n            line_end=node.end_point[0] + 1,\n            parent=parent_class,\n            visibility=visibility,\n            language='php',\n            metadata={}\n        )\n    \n    def _extract_constant(self, node, content: str) -> CodeSymbol:\n        \"\"\"Extract constant symbol.\"\"\"\n        source = content[node.start_byte:node.end_byte]\n        # Extract name from const declaration\n        name = 'CONSTANT'\n        for child in node.children:\n            if child.type == 'const_element':\n                name_node = child.child_by_field_name('name')\n                if name_node:\n                    name = content[name_node.start_byte:name_node.end_byte]\n                    break\n        \n        return CodeSymbol(\n            name=name,\n            qualified_name=name,\n            symbol_type='constant',\n            content=source,\n            docstring=None,\n            signature=None,\n            line_start=node.start_point[0] + 1,\n            line_end=node.end_point[0] + 1,\n            parent=None,\n            visibility=None,\n            language='php',\n            metadata={}\n        )\n    \n    def _extract_interface_trait(self, node, content: str, type_name: str) -> CodeSymbol:\n        \"\"\"Extract interface or trait symbol.\"\"\"\n        name_node = node.child_by_field_name('name')\n        name = content[name_node.start_byte:name_node.end_byte] if name_node else 'unknown'\n        source = content[node.start_byte:node.end_byte]\n        phpdoc = self._extract_phpdoc(node, content)\n        \n        return CodeSymbol(\n            name=name,\n            qualified_name=name,\n            symbol_type=type_name,\n            content=source,\n            docstring=phpdoc,\n            signature=None,\n            line_start=node.start_point[0] + 1,\n            line_end=node.end_point[0] + 1,\n            parent=None,\n            visibility=None,\n            language='php',\n            metadata={}\n        )\n    \n    def get_symbol_context(self, symbol: CodeSymbol) -> str:\n        \"\"\"Format symbol for embedding.\"\"\"\n        parts = [f\"{symbol.symbol_type}: {symbol.qualified_name}\"]\n        if symbol.visibility:\n            parts[0] = f\"{symbol.visibility} {parts[0]}\"\n        if symbol.signature:\n            parts.append(symbol.signature)\n        if symbol.docstring:\n            parts.append(f\"\\n{symbol.docstring}\")\n        return '\\n'.join(parts)\n```\n\nUpdate code_loaders/__init__.py to export PHPCodeLoader.",
+        "testStrategy": "Unit tests: (1) Parse function with PHPDoc, (2) Parse class with methods, (3) Extract visibility modifiers (public/private/protected), (4) Extract from interfaces and traits, (5) Handle namespaced code, (6) Parse files with no PHPDoc gracefully",
+        "priority": "high",
+        "dependencies": [
+          "16"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add CodeSymbol data model to models.py",
+            "description": "Create CodeSymbol dataclass in src/qdrant_indexer/models.py to represent parsed code symbols (functions, classes, methods) with metadata",
+            "dependencies": [],
+            "details": "Add a new @dataclass CodeSymbol to models.py after the existing Document, Chunk, and IndexedPoint models. Include fields: name (str), qualified_name (str), symbol_type (str), content (str), docstring (str|None), signature (str|None), line_start (int), line_end (int), parent (str|None), visibility (str|None), language (str), metadata (dict[str, Any]). Use field(default_factory=dict) for metadata. This follows the same pattern as the existing Document model with metadata.",
+            "status": "pending",
+            "testStrategy": "Import CodeSymbol from qdrant_indexer.models and verify all fields are correctly typed and instantiate a sample CodeSymbol object",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Create code_loaders directory and base.py module",
+            "description": "Create src/qdrant_indexer/code_loaders/ directory with __init__.py and base.py containing abstract CodeLoader base class",
+            "dependencies": [
+              1
+            ],
+            "details": "Create the code_loaders directory in src/qdrant_indexer/. Create base.py with abstract CodeLoader class similar to DocumentLoader pattern in loaders.py. Define abstract methods: extract_symbols(content: str, file_path: Path) -> list[CodeSymbol] and get_symbol_context(symbol: CodeSymbol) -> str. Import ABC and abstractmethod from abc, Path from pathlib, and CodeSymbol from qdrant_indexer.models. Create __init__.py to make it a package.",
+            "status": "pending",
+            "testStrategy": "Import CodeLoader from qdrant_indexer.code_loaders.base and verify it cannot be instantiated directly (raises TypeError)",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement PHPCodeLoader class with tree-sitter parser initialization",
+            "description": "Create src/qdrant_indexer/code_loaders/php.py with PHPCodeLoader class that initializes tree-sitter parser with PHP language grammar",
+            "dependencies": [
+              2
+            ],
+            "details": "Create php.py file in code_loaders directory. Implement PHPCodeLoader(CodeLoader) class with __init__ method that creates Parser instance and sets language to Language(ts_php.language()). Import tree_sitter_php as ts_php, Parser and Language from tree_sitter, Path from pathlib, CodeSymbol from qdrant_indexer.models, and CodeLoader from .base. Add class docstring: 'Loader for PHP source files using tree-sitter.'",
+            "status": "pending",
+            "testStrategy": "Instantiate PHPCodeLoader() and verify parser is initialized correctly without errors, check parser.language is set",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement symbol extraction methods in PHPCodeLoader",
+            "description": "Implement extract_symbols() method and all helper methods (_extract_function, _extract_class, _extract_method, _extract_constant, _extract_interface_trait, _extract_phpdoc) in PHPCodeLoader",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement extract_symbols(content, file_path) that parses PHP code with tree-sitter query for functions, classes, methods, constants, interfaces, and traits. Implement _extract_phpdoc() to find and clean PHPDoc comments by checking prev_sibling nodes for comment type starting with '/**'. Implement _extract_function() extracting name, parameters, return type, source, and PHPDoc. Implement _extract_class() extracting name, base_clause, and PHPDoc. Implement _extract_method() extracting name, parent class by walking up to class_declaration node, visibility (public/private/protected), and PHPDoc. Implement _extract_constant() and _extract_interface_trait() methods. Each should return CodeSymbol with appropriate fields populated, including line_start and line_end from node.start_point[0]+1 and node.end_point[0]+1.",
+            "status": "pending",
+            "testStrategy": "Test with sample PHP file containing functions with PHPDoc comments, classes with methods, interfaces, traits, and constants. Verify correct symbol extraction with proper line numbers, visibility, qualified names (ClassName.methodName), and cleaned PHPDoc content",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Implement get_symbol_context and update code_loaders __init__.py",
+            "description": "Implement get_symbol_context() method in PHPCodeLoader and export PHPCodeLoader from code_loaders/__init__.py following the pattern used in loaders/__init__.py",
+            "dependencies": [
+              4
+            ],
+            "details": "Implement get_symbol_context(symbol: CodeSymbol) -> str method that formats symbol for embedding by combining visibility (if present), symbol_type, qualified_name, signature (if present), and docstring (if present) into readable text. Update src/qdrant_indexer/code_loaders/__init__.py to import and export PHPCodeLoader following the LOADERS registry pattern from loaders.py. Example format: 'public method: ClassName.methodName\\n(param1, param2): returnType\\nDocstring content'. This allows the indexer to create meaningful embeddings for code symbols.",
+            "status": "pending",
+            "testStrategy": "Test get_symbol_context() with various CodeSymbol types (function, method, class) and verify formatted output includes all relevant parts. Verify PHPCodeLoader can be imported from qdrant_indexer.code_loaders package",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2025-12-08T20:13:02.628Z"
+      },
+      {
+        "id": "19",
+        "title": "Implement CodeChunker for symbol-aware chunking",
+        "description": "Create code-specific chunker that respects symbol boundaries and preserves context",
+        "details": "Add CodeChunker class to src/qdrant_indexer/chunkers.py:\n\n```python\nclass CodeChunker(Chunker):\n    \"\"\"Code-aware chunker that respects symbol boundaries.\n    \n    Primary strategy: One chunk per symbol\n    Fallback: Split large symbols at logical points while preserving signature\n    \"\"\"\n    \n    def __init__(self, chunk_size: int = 512, overlap: int = 50, include_source: bool = True):\n        \"\"\"Initialize code chunker.\n        \n        Args:\n            chunk_size: Maximum chunk size in characters\n            overlap: Overlap for split symbols\n            include_source: Include full source code (vs docstring only)\n        \"\"\"\n        self.chunk_size = chunk_size\n        self.overlap = overlap\n        self.include_source = include_source\n    \n    def chunk_symbol(self, symbol: CodeSymbol) -> list[str]:\n        \"\"\"Chunk a single code symbol.\n        \n        Returns:\n            List of text chunks for this symbol\n        \"\"\"\n        # Build primary content: signature + docstring\n        context = []\n        context.append(f\"{symbol.symbol_type}: {symbol.qualified_name}\")\n        \n        if symbol.signature:\n            context.append(symbol.signature)\n        \n        if symbol.docstring:\n            context.append(f\"\\nDocumentation:\\n{symbol.docstring}\")\n        \n        header = '\\n'.join(context)\n        \n        # Choose content to chunk\n        if self.include_source:\n            full_content = f\"{header}\\n\\nSource:\\n{symbol.content}\"\n        else:\n            full_content = header\n        \n        # If fits in one chunk, return as-is\n        if len(full_content) <= self.chunk_size:\n            return [full_content]\n        \n        # Symbol too large, need to split\n        chunks = []\n        \n        # First chunk: always include header + start of content\n        if self.include_source:\n            remaining_space = self.chunk_size - len(header) - 10  # 10 for \"\\n\\nSource:\\n\"\n            first_chunk = f\"{header}\\n\\nSource:\\n{symbol.content[:remaining_space]}\"\n            chunks.append(first_chunk)\n            \n            # Split remaining source code\n            remaining = symbol.content[remaining_space:]\n            while remaining:\n                # Include overlap from previous chunk\n                chunk_start = max(0, len(chunks[-1]) - self.overlap)\n                prefix = chunks[-1][chunk_start:] if self.overlap > 0 else \"\"\n                \n                # Take next chunk_size characters\n                chunk_content = remaining[:self.chunk_size - len(prefix)]\n                chunks.append(prefix + chunk_content)\n                remaining = remaining[len(chunk_content):]\n        else:\n            # Docstring only mode: split header if needed\n            chunks = split_text_with_overlap(full_content, self.chunk_size, self.overlap)\n        \n        return chunks\n    \n    def chunk(self, text: str) -> list[str]:\n        \"\"\"Chunk text (fallback for non-code documents).\n        \n        For code documents, use chunk_symbols() instead.\n        \"\"\"\n        # Fallback to recursive chunking for plain text\n        return RecursiveChunker(self.chunk_size, self.overlap).chunk(text)\n    \n    def chunk_symbols(self, symbols: list[CodeSymbol]) -> list[tuple[str, CodeSymbol]]:\n        \"\"\"Chunk a list of code symbols.\n        \n        Returns:\n            List of (chunk_text, source_symbol) tuples\n        \"\"\"\n        result = []\n        for symbol in symbols:\n            symbol_chunks = self.chunk_symbol(symbol)\n            for chunk_text in symbol_chunks:\n                result.append((chunk_text, symbol))\n        return result\n```\n\nThis chunker will be used in the indexer when processing code files.",
+        "testStrategy": "Unit tests: (1) Single symbol fits in one chunk, (2) Large function split across chunks with header preserved, (3) Docstring-only mode, (4) Overlap between split chunks, (5) Edge case: very small chunk_size",
+        "priority": "medium",
+        "dependencies": [
+          "15"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add CodeSymbol import to chunkers.py",
+            "description": "Import the CodeSymbol class from models.py into chunkers.py to enable type annotations and symbol processing",
+            "dependencies": [],
+            "details": "Add 'from qdrant_indexer.models import CodeSymbol' to the imports section at the top of src/qdrant_indexer/chunkers.py. This will be needed by the CodeChunker class to properly type-hint the chunk_symbol and chunk_symbols methods. Verify CodeSymbol exists in models.py before importing.",
+            "status": "pending",
+            "testStrategy": "Run 'python -c \"from qdrant_indexer.chunkers import CodeSymbol\"' to verify import works without errors",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement CodeChunker.__init__ method",
+            "description": "Create the CodeChunker class skeleton and implement the constructor with configurable chunk_size, overlap, and include_source parameters",
+            "dependencies": [
+              1
+            ],
+            "details": "Create the CodeChunker class inheriting from Chunker base class. Implement __init__(chunk_size: int = 512, overlap: int = 50, include_source: bool = True) that stores these parameters as instance variables. Add comprehensive docstring explaining each parameter. Follow the same pattern as RecursiveChunker and FixedSizeChunker for consistency.",
+            "status": "pending",
+            "testStrategy": "Unit test: Instantiate CodeChunker with default parameters and custom parameters, verify all attributes are set correctly",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement CodeChunker.chunk_symbol method for single symbol chunking",
+            "description": "Create the core method that chunks a single CodeSymbol, respecting symbol boundaries and preserving context with header information",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement chunk_symbol(symbol: CodeSymbol) -> list[str] method that: (1) Builds header with symbol type, qualified name, signature, and docstring, (2) Combines header with source code if include_source=True, (3) Returns single chunk if content fits within chunk_size, (4) Splits large symbols using overlap strategy, ensuring first chunk always includes complete header, (5) Uses the existing split_text_with_overlap helper for remaining content after header. Handle edge cases like missing docstrings or signatures.",
+            "status": "pending",
+            "testStrategy": "Unit tests: (1) Small symbol that fits in one chunk, (2) Large function requiring multiple chunks with header preserved in first chunk, (3) Symbol with missing docstring, (4) Symbol with missing signature, (5) include_source=False mode",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement CodeChunker.chunk_symbols batch processing method",
+            "description": "Create method to process multiple CodeSymbols and return chunk-symbol pairs for indexing",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement chunk_symbols(symbols: list[CodeSymbol]) -> list[tuple[str, CodeSymbol]] method that iterates over all symbols, calls chunk_symbol() for each, and returns a flat list of (chunk_text, source_symbol) tuples. This preserves the mapping between chunks and their source symbols, which is essential for metadata tracking during indexing. Use list comprehension or generator for efficiency.",
+            "status": "pending",
+            "testStrategy": "Unit tests: (1) Empty symbol list returns empty result, (2) Single symbol produces correct tuple format, (3) Multiple symbols with varying sizes, (4) Verify all chunks maintain reference to correct source symbol",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Implement CodeChunker.chunk fallback method and write comprehensive tests",
+            "description": "Add fallback chunk() method for plain text and create comprehensive test suite covering all CodeChunker functionality",
+            "dependencies": [
+              4
+            ],
+            "details": "Implement chunk(text: str) -> list[str] method that delegates to RecursiveChunker for non-code text. Create test file tests/test_code_chunker.py with test cases: (1) Single symbol fits in one chunk, (2) Large function split across multiple chunks with header preserved, (3) Docstring-only mode (include_source=False), (4) Overlap verification between split chunks, (5) Very small chunk_size edge case, (6) chunk_symbols batch processing, (7) Fallback chunk() method for plain text, (8) CodeChunker is Chunker subclass. Follow existing test patterns from test_chunkers.py.",
+            "status": "pending",
+            "testStrategy": "Run 'pytest tests/test_code_chunker.py -v' to verify all tests pass. Ensure test coverage includes: single/multiple symbols, small/large content, with/without docstrings, include_source true/false, overlap scenarios, edge cases",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2025-12-08T20:14:32.760Z"
+      },
+      {
+        "id": "20",
+        "title": "Update indexer.py to handle code symbols and enhanced metadata",
+        "description": "Modify QdrantIndexer to detect code files, extract symbols, and store enhanced payload metadata",
+        "details": "Update src/qdrant_indexer/indexer.py to handle CodeSymbol metadata:\n\n1. Modify index_file() method to detect code documents:\n```python\ndef index_file(self, file_path: Path, chunker: Chunker, batch_size: int = 100) -> int:\n    \"\"\"Index a single file, handling both regular docs and code.\"\"\"\n    loader = get_loader(file_path)\n    doc = loader.load(file_path)\n    \n    # Check if this is a code document with symbols\n    if doc.metadata.get('is_code') and 'symbols' in doc.metadata:\n        return self._index_code_file(doc, chunker, batch_size)\n    else:\n        return self._index_regular_file(doc, chunker, batch_size)\n\ndef _index_code_file(self, doc: Document, chunker: Chunker, batch_size: int) -> int:\n    \"\"\"Index code file with symbol metadata.\"\"\"\n    from qdrant_indexer.chunkers import CodeChunker\n    from qdrant_indexer.models import CodeSymbol\n    \n    symbols = doc.metadata['symbols']\n    \n    # Use CodeChunker if available, otherwise fallback\n    if isinstance(chunker, CodeChunker):\n        chunks_with_symbols = chunker.chunk_symbols(symbols)\n    else:\n        # Fallback: convert symbols to text and use regular chunker\n        chunks_with_symbols = []\n        for symbol in symbols:\n            context = f\"{symbol.symbol_type}: {symbol.qualified_name}\\n\"\n            if symbol.docstring:\n                context += symbol.docstring\n            chunks = chunker.chunk(context)\n            for chunk in chunks:\n                chunks_with_symbols.append((chunk, symbol))\n    \n    # Create points with enhanced metadata\n    points = []\n    for idx, (chunk_text, symbol) in enumerate(chunks_with_symbols):\n        embedding = next(self.embedding_model.embed([chunk_text]))\n        \n        payload = {\n            \"document\": chunk_text,\n            \"source\": str(doc.source_path),\n            \"chunk_index\": idx,\n            \"total_chunks\": len(chunks_with_symbols),\n            \"timestamp\": datetime.utcnow().isoformat(),\n            # Code-specific metadata\n            \"language\": symbol.language,\n            \"symbol_type\": symbol.symbol_type,\n            \"symbol_name\": symbol.name,\n            \"symbol_qualified_name\": symbol.qualified_name,\n            \"signature\": symbol.signature or \"\",\n            \"docstring\": symbol.docstring or \"\",\n            \"line_start\": symbol.line_start,\n            \"line_end\": symbol.line_end,\n            \"parent_class\": symbol.parent or \"\",\n            \"visibility\": symbol.visibility or \"\",\n            **doc.metadata,  # Include file-level metadata\n        }\n        \n        point_id = self._generate_point_id()\n        points.append({\"id\": point_id, \"vector\": embedding, \"payload\": payload})\n        \n        # Batch upload\n        if len(points) >= batch_size:\n            self.client.upsert(collection_name=self.collection_name, points=points)\n            points = []\n    \n    # Upload remaining points\n    if points:\n        self.client.upsert(collection_name=self.collection_name, points=points)\n    \n    return len(chunks_with_symbols)\n\ndef _index_regular_file(self, doc: Document, chunker: Chunker, batch_size: int) -> int:\n    \"\"\"Index regular document (existing logic).\"\"\"\n    # Move existing index_file logic here\n    # ... (keep existing implementation)\n```\n\nImport CodeSymbol at top of file:\n```python\nfrom qdrant_indexer.models import Document, Chunk, IndexedPoint, CodeSymbol\n```",
+        "testStrategy": "Unit tests with mocked Qdrant client: (1) Index Python file with symbols, verify payload has code metadata, (2) Index regular markdown file, verify standard payload, (3) Index mixed directory with code and docs, (4) Verify batch uploading works with code chunks",
+        "priority": "high",
+        "dependencies": [
+          "19"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add CodeSymbol import to indexer.py",
+            "description": "Import the CodeSymbol model from qdrant_indexer.models to enable type checking and usage in code file handling methods",
+            "dependencies": [],
+            "details": "Add 'from qdrant_indexer.models import Document, Chunk, IndexedPoint, CodeSymbol' to the imports section at the top of src/qdrant_indexer/indexer.py (around line 13-15). This prepares the indexer to work with code symbol metadata that will be provided by code loaders. Verify that CodeSymbol exists in models.py before proceeding with implementation.",
+            "status": "pending",
+            "testStrategy": "Verify the file imports successfully without errors by running 'python -c \"from qdrant_indexer.indexer import QdrantIndexer\"'. Check that CodeSymbol is accessible within the module.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Refactor index_file() to detect code documents",
+            "description": "Modify the index_file() method to detect code files by checking metadata and route to appropriate handler method",
+            "dependencies": [
+              1
+            ],
+            "details": "In src/qdrant_indexer/indexer.py, update the index_file() method (lines 78-154) to check if doc.metadata contains 'is_code' and 'symbols' keys after loading. If both are present, call a new _index_code_file() method; otherwise, call a new _index_regular_file() method. The detection logic should be: 'if doc.metadata.get(\"is_code\") and \"symbols\" in doc.metadata:'. This creates a clean separation between code and regular document indexing flows.",
+            "status": "pending",
+            "testStrategy": "Unit test with mocked loader that returns doc.metadata={'is_code': True, 'symbols': []}. Verify _index_code_file() is called. Test with doc.metadata={} and verify _index_regular_file() is called.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement _index_regular_file() method",
+            "description": "Extract existing index_file() logic into a new _index_regular_file() method for handling non-code documents",
+            "dependencies": [
+              2
+            ],
+            "details": "Create a new private method _index_regular_file(self, doc: Document, chunker: Chunker, batch_size: int, on_progress: ProgressCallback | None = None) -> int in src/qdrant_indexer/indexer.py. Move the current index_file() implementation (lines 100-154) into this new method, keeping all existing functionality: chunking with doc.content, embedding generation, payload building via _build_payload(), batch uploading, and progress callbacks. This preserves the original behavior for regular documents.",
+            "status": "pending",
+            "testStrategy": "Run existing unit tests for index_file() against _index_regular_file() to ensure no regression. Test with markdown, text, and PDF files. Verify chunk counts, payload structure, and batch uploading work identically.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Implement _index_code_file() with symbol-aware payload",
+            "description": "Create _index_code_file() method to handle code documents with symbol extraction and enhanced metadata payloads",
+            "dependencies": [
+              3
+            ],
+            "details": "In src/qdrant_indexer/indexer.py, implement _index_code_file(self, doc: Document, chunker: Chunker, batch_size: int, on_progress: ProgressCallback | None = None) -> int. Extract symbols from doc.metadata['symbols']. For each symbol, create chunk text as 'f\"{symbol.symbol_type}: {symbol.qualified_name}\\n\" + (symbol.docstring or \"\")'. Generate embeddings using self.embeddings.embed(). Build payload with code-specific fields: language, symbol_type, symbol_name, symbol_qualified_name, signature, docstring, line_start, line_end, parent_class, visibility. Use PointStruct with self._vector_name for vector key. Handle batch uploading and progress callbacks identical to _index_regular_file().",
+            "status": "pending",
+            "testStrategy": "Unit test with mocked symbols containing all CodeSymbol fields. Verify payload contains all code metadata fields (language, symbol_type, symbol_name, etc.). Test batch uploading with >100 symbols. Verify embeddings are generated for correct text format.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add fallback handling for CodeChunker in _index_code_file()",
+            "description": "Implement conditional logic to use CodeChunker.chunk_symbols() if available, otherwise fallback to basic symbol text chunking",
+            "dependencies": [
+              4
+            ],
+            "details": "In the _index_code_file() method in src/qdrant_indexer/indexer.py, add type checking with 'from qdrant_indexer.chunkers import CodeChunker' (conditional import to avoid circular dependencies). Use 'isinstance(chunker, CodeChunker)' to detect if specialized chunker is available. If True, call 'chunker.chunk_symbols(symbols)' which should return list of (chunk_text, symbol) tuples. If False, use fallback: iterate symbols, create text as 'f\"{symbol.symbol_type}: {symbol.qualified_name}\\n{symbol.docstring or \"\"}\"', chunk with regular chunker, and pair each chunk with its symbol. This ensures compatibility with both specialized and generic chunkers.",
+            "status": "pending",
+            "testStrategy": "Test with mock CodeChunker that has chunk_symbols() method - verify it's called. Test with RecursiveChunker - verify fallback logic executes. Test with symbol containing long docstring - verify chunker.chunk() splits it properly in fallback mode.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "21",
+        "title": "Register code loaders in LOADERS registry",
+        "description": "Update loaders.py to register Python and PHP code loaders for their file extensions",
+        "details": "Update src/qdrant_indexer/loaders.py:\n\n1. Import the code loaders:\n```python\nfrom qdrant_indexer.code_loaders import PythonCodeLoader, PHPCodeLoader\n```\n\n2. Update LOADERS registry:\n```python\nLOADERS: dict[str, type[DocumentLoader]] = {\n    # Existing loaders\n    \".md\": MarkdownLoader,\n    \".markdown\": MarkdownLoader,\n    \".txt\": TextLoader,\n    \".text\": TextLoader,\n    \".pdf\": PDFLoader,\n    \".rst\": ReStructuredTextLoader,\n    # Code loaders\n    \".py\": PythonCodeLoader,\n    \".pyi\": PythonCodeLoader,  # Python stub files\n    \".php\": PHPCodeLoader,\n    \".php3\": PHPCodeLoader,\n    \".php4\": PHPCodeLoader,\n    \".php5\": PHPCodeLoader,\n    \".phtml\": PHPCodeLoader,\n}\n```\n\nThis enables automatic code-aware parsing when indexing .py and .php files.",
+        "testStrategy": "Integration test: Index directory containing .py, .php, and .md files. Verify get_loader() returns correct loader type for each extension. Verify code files get code-aware parsing while markdown files use standard parsing.",
+        "priority": "medium",
+        "dependencies": [
+          "17",
+          "18",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Verify code loaders module exists and classes are implemented",
+            "description": "Check that PythonCodeLoader and PHPCodeLoader classes exist in src/qdrant_indexer/code_loaders/ before attempting to import them",
+            "dependencies": [],
+            "details": "Before modifying loaders.py, verify that the code_loaders package and its classes exist. Check for:\n1. Directory src/qdrant_indexer/code_loaders/\n2. Files __init__.py, base.py, python.py, php.py\n3. PythonCodeLoader class in python.py\n4. PHPCodeLoader class in php.py\n5. Proper exports in __init__.py\n\nIf these don't exist, task dependencies (17, 18, 20) must be completed first. This verification prevents import errors when updating loaders.py.",
+            "status": "pending",
+            "testStrategy": "Run: python -c \"from qdrant_indexer.code_loaders import PythonCodeLoader, PHPCodeLoader; print('Success')\" to verify classes can be imported without errors",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add code loader imports to loaders.py",
+            "description": "Import PythonCodeLoader and PHPCodeLoader classes at the top of src/qdrant_indexer/loaders.py",
+            "dependencies": [
+              1
+            ],
+            "details": "Add the following import statement after the existing imports in src/qdrant_indexer/loaders.py (around line 10, after the Document import):\n\n```python\nfrom qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader\n```\n\nPlace this import alphabetically and group it with other internal imports. Ensure proper formatting and maintain consistency with existing import style (absolute imports from qdrant_indexer package).",
+            "status": "pending",
+            "testStrategy": "Run: python -m py_compile src/qdrant_indexer/loaders.py to verify syntax. Then run: python -c \"from qdrant_indexer.loaders import LOADERS\" to ensure no import errors",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Register Python file extensions in LOADERS registry",
+            "description": "Add .py and .pyi extensions mapping to PythonCodeLoader in the LOADERS dictionary",
+            "dependencies": [
+              2
+            ],
+            "details": "Update the LOADERS dictionary in src/qdrant_indexer/loaders.py (currently at lines 127-134) to include Python file extensions:\n\n```python\nLOADERS: dict[str, type[DocumentLoader]] = {\n    # Existing loaders\n    \".md\": MarkdownLoader,\n    \".markdown\": MarkdownLoader,\n    \".txt\": TextLoader,\n    \".text\": TextLoader,\n    \".pdf\": PDFLoader,\n    \".rst\": ReStructuredTextLoader,\n    # Python code loaders\n    \".py\": PythonCodeLoader,\n    \".pyi\": PythonCodeLoader,  # Python stub files\n}\n```\n\nMaintain alphabetical grouping and add comment to separate code loaders from document loaders.",
+            "status": "pending",
+            "testStrategy": "Unit test: Verify get_loader(Path('test.py')) returns PythonCodeLoader instance and get_loader(Path('test.pyi')) returns PythonCodeLoader instance",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Register PHP file extensions in LOADERS registry",
+            "description": "Add .php and related extensions (.php3, .php4, .php5, .phtml) mapping to PHPCodeLoader in the LOADERS dictionary",
+            "dependencies": [
+              3
+            ],
+            "details": "Extend the LOADERS dictionary in src/qdrant_indexer/loaders.py to include PHP file extensions:\n\n```python\nLOADERS: dict[str, type[DocumentLoader]] = {\n    # ... existing loaders including Python ...\n    # PHP code loaders\n    \".php\": PHPCodeLoader,\n    \".php3\": PHPCodeLoader,\n    \".php4\": PHPCodeLoader,\n    \".php5\": PHPCodeLoader,\n    \".phtml\": PHPCodeLoader,\n}\n```\n\nGroup PHP extensions together after Python extensions. This supports legacy PHP file extensions (.php3, .php4, .php5) and template files (.phtml).",
+            "status": "pending",
+            "testStrategy": "Unit test: Verify get_loader(Path('test.php')) returns PHPCodeLoader, and verify all variants (.php3, .php4, .php5, .phtml) return PHPCodeLoader instances",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Create integration tests for code loader registration",
+            "description": "Add test cases to tests/test_loaders.py verifying code loaders are properly registered and work with get_loader()",
+            "dependencies": [
+              4
+            ],
+            "details": "Add new test methods to TestLoaderFactory class in tests/test_loaders.py:\n\n1. test_get_loader_for_python() - verify .py returns PythonCodeLoader\n2. test_get_loader_for_python_stub() - verify .pyi returns PythonCodeLoader\n3. test_get_loader_for_php() - verify .php returns PHPCodeLoader\n4. test_get_loader_for_php_variants() - verify .php3, .php4, .php5, .phtml return PHPCodeLoader\n\nUpdate TestLoadersRegistry.test_loaders_contains_expected_extensions() to assert code extensions exist in LOADERS registry. Add integration test that creates sample .py and .php files, uses get_loader(), and verifies Document objects are returned with code-specific metadata.",
+            "status": "pending",
+            "testStrategy": "Run: pytest tests/test_loaders.py::TestLoaderFactory -v to verify all new test cases pass. Run: pytest tests/test_loaders.py::TestLoadersRegistry -v to verify registry tests pass",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "22",
+        "title": "Update CLI to support code indexing options",
+        "description": "Add CLI flags for code-aware parsing modes and update default file patterns",
+        "details": "Update src/qdrant_indexer/cli.py:\n\n1. Add new CLI options to index command:\n```python\n@app.command()\ndef index(\n    # ... existing parameters ...\n    pattern: Annotated[list[str], typer.Option(\"--pattern\", \"-p\", help=\"Glob patterns for files (can be repeated)\")] = [\"**/*.{md,txt,pdf,rst,py,php}\"],  # Updated default\n    code_mode: Annotated[bool, typer.Option(\"--code-mode\", help=\"Enable code-aware parsing (auto-detected by extension)\")] = True,\n    include_source: Annotated[bool, typer.Option(\"--include-source\", help=\"Include full source code in chunks\")] = True,\n    docstrings_only: Annotated[bool, typer.Option(\"--docstrings-only\", help=\"Only index docstrings, not code bodies\")] = False,\n    # ... rest of parameters ...\n) -> None:\n```\n\n2. Initialize CodeChunker for code files:\n```python\n# After creating regular chunker\nchunker = RecursiveChunker(chunk_size=chunk_size, overlap=chunk_overlap)\n\n# Import CodeChunker\nfrom qdrant_indexer.chunkers import CodeChunker\n\n# Create code chunker if code mode enabled\ncode_chunker = None\nif code_mode:\n    include_src = include_source and not docstrings_only\n    code_chunker = CodeChunker(\n        chunk_size=chunk_size,\n        overlap=chunk_overlap,\n        include_source=include_src\n    )\n```\n\n3. Pass appropriate chunker based on file type:\n```python\nfor file_path in files:\n    progress.update(file_task, description=f\"[cyan]{file_path.name}[/cyan]\")\n    \n    try:\n        # Choose chunker based on file extension\n        if code_mode and file_path.suffix in ['.py', '.pyi', '.php', '.php3', '.php4', '.php5', '.phtml']:\n            chunks_count = indexer.index_file(file_path, code_chunker, batch_size)\n        else:\n            chunks_count = indexer.index_file(file_path, chunker, batch_size)\n        # ... rest of loop ...\n```\n\n4. Update help text and examples in README to show code indexing:\n```bash\n# Index Python codebase\nqdrant-indexer index ./src -c my-code -p \"**/*.py\"\n\n# Index with docstrings only\nqdrant-indexer index ./src -c docs --docstrings-only\n```",
+        "testStrategy": "Manual CLI testing: (1) Run with default patterns, verify .py and .php files included, (2) Test --docstrings-only flag, (3) Test --no-code-mode to disable, (4) Test --include-source=false, (5) Verify help text displays correctly",
+        "priority": "medium",
+        "dependencies": [
+          "21"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add new CLI parameters for code indexing options",
+            "description": "Update the index command function signature in cli.py to add code-mode, include-source, docstrings-only, and updated default pattern parameters",
+            "dependencies": [],
+            "details": "In src/qdrant_indexer/cli.py:68, update the pattern parameter default from [\"**/*.md\", \"**/*.txt\", \"**/*.pdf\", \"**/*.rst\"] to [\"**/*.{md,txt,pdf,rst,py,php}\"]. Add three new parameters after line 68: code_mode (bool, default True, help=\"Enable code-aware parsing\"), include_source (bool, default True, help=\"Include full source code in chunks\"), and docstrings_only (bool, default False, help=\"Only index docstrings, not code bodies\"). Use the same Annotated[bool, typer.Option(...)] pattern as existing boolean parameters like no_default_excludes and quiet.",
+            "status": "pending",
+            "testStrategy": "Run 'qdrant-indexer index --help' to verify new options appear in help output with correct descriptions. Verify pattern default shows updated extensions including .py and .php.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Import CodeChunker in CLI module",
+            "description": "Add import statement for CodeChunker class at the top of cli.py alongside existing chunker imports",
+            "dependencies": [],
+            "details": "In src/qdrant_indexer/cli.py:16, update the import line 'from qdrant_indexer.chunkers import RecursiveChunker' to 'from qdrant_indexer.chunkers import RecursiveChunker, CodeChunker'. This assumes CodeChunker will be implemented in the chunkers.py module (Task 19 dependency). The import should follow the existing pattern of importing from qdrant_indexer submodules.",
+            "status": "pending",
+            "testStrategy": "Verify CLI can be imported without errors: python -c 'from qdrant_indexer.cli import app'. If CodeChunker doesn't exist yet, this will fail with ImportError, which is expected until Task 19 is complete.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Initialize CodeChunker instance based on CLI parameters",
+            "description": "Create CodeChunker instance after RecursiveChunker initialization, conditioned on code_mode flag",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "In src/qdrant_indexer/cli.py after line 114 (where RecursiveChunker is initialized), add code to conditionally create a CodeChunker instance:\n\n```python\n# Create code chunker if code mode enabled\ncode_chunker = None\nif code_mode:\n    include_src = include_source and not docstrings_only\n    code_chunker = CodeChunker(\n        chunk_size=chunk_size,\n        overlap=chunk_overlap,\n        include_source=include_src\n    )\n```\n\nSet code_chunker to None when code_mode is False. The include_src logic ensures source code is excluded when docstrings_only is True.",
+            "status": "pending",
+            "testStrategy": "Add debug logging to print code_chunker type. Run with --code-mode and verify CodeChunker is instantiated. Run with --no-code-mode and verify code_chunker is None. Test --docstrings-only flag sets include_source correctly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Select appropriate chunker based on file extension in indexing loop",
+            "description": "Modify the file indexing loop to choose between code_chunker and regular chunker based on file extension",
+            "dependencies": [
+              3
+            ],
+            "details": "In src/qdrant_indexer/cli.py:170-174, replace the single line 'chunks_count = indexer.index_file(file_path, chunker, batch_size)' with conditional logic:\n\n```python\n# Choose chunker based on file extension\nif code_mode and code_chunker and file_path.suffix in ['.py', '.pyi', '.php', '.php3', '.php4', '.php5', '.phtml']:\n    chunks_count = indexer.index_file(file_path, code_chunker, batch_size)\nelse:\n    chunks_count = indexer.index_file(file_path, chunker, batch_size)\n```\n\nThis checks if code_mode is enabled, code_chunker was created, and the file has a code extension. The extensions list matches those that will be registered in the LOADERS registry (Task 21).",
+            "status": "pending",
+            "testStrategy": "Index a directory with mixed .py, .php, and .md files. With --code-mode (default), verify .py and .php use CodeChunker while .md uses RecursiveChunker. Test --no-code-mode to ensure all files use RecursiveChunker. Add verbose logging to show which chunker is selected for each file.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Update CLI help examples with code indexing usage",
+            "description": "Add code indexing examples to the CLI command help text and module docstring",
+            "dependencies": [
+              1,
+              4
+            ],
+            "details": "In src/qdrant_indexer/cli.py:75, update the command docstring to include code indexing examples:\n\n```python\n\"\"\"Index a directory into a Qdrant collection.\n\nExamples:\n    # Index documentation\n    qdrant-indexer index ./docs -c my-docs\n    \n    # Index Python codebase with default settings\n    qdrant-indexer index ./src -c my-code -p \"**/*.py\"\n    \n    # Index with docstrings only (no function bodies)\n    qdrant-indexer index ./src -c docs --docstrings-only\n    \n    # Disable code-aware parsing\n    qdrant-indexer index ./src -c raw --no-code-mode\n\"\"\"\n```\n\nThese examples demonstrate the new code indexing features and help users understand the different modes.",
+            "status": "pending",
+            "testStrategy": "Run 'qdrant-indexer index --help' and verify the examples appear in the command help output. Examples should be properly formatted and readable in the terminal.",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "23",
+        "title": "Create comprehensive test suite for code loaders",
+        "description": "Implement unit and integration tests for Python and PHP code parsing",
+        "details": "Create test files:\n\n1. tests/test_code_loaders.py for unit tests:\n```python\nimport pytest\nfrom pathlib import Path\nfrom qdrant_indexer.code_loaders import PythonCodeLoader, PHPCodeLoader\nfrom qdrant_indexer.models import CodeSymbol\n\nclass TestPythonCodeLoader:\n    def test_parse_simple_function(self, tmp_path):\n        \"\"\"Test parsing a simple function with docstring.\"\"\"\n        code = '''\ndef hello(name: str) -> str:\n    \"\"\"Greet someone by name.\"\"\"\n    return f\"Hello, {name}!\"\n'''\n        file = tmp_path / \"test.py\"\n        file.write_text(code)\n        \n        loader = PythonCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        assert len(symbols) == 1\n        assert symbols[0].name == 'hello'\n        assert symbols[0].symbol_type == 'function'\n        assert symbols[0].docstring == 'Greet someone by name.'\n        assert '-> str' in symbols[0].signature\n    \n    def test_parse_class_with_methods(self, tmp_path):\n        \"\"\"Test parsing class with methods.\"\"\"\n        code = '''\nclass Calculator:\n    \"\"\"A simple calculator.\"\"\"\n    \n    def add(self, a: int, b: int) -> int:\n        \"\"\"Add two numbers.\"\"\"\n        return a + b\n    \n    def subtract(self, a: int, b: int) -> int:\n        \"\"\"Subtract b from a.\"\"\"\n        return a - b\n'''\n        file = tmp_path / \"test.py\"\n        file.write_text(code)\n        \n        loader = PythonCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        # Should have 1 class + 2 methods\n        assert len(symbols) == 3\n        class_symbol = [s for s in symbols if s.symbol_type == 'class'][0]\n        assert class_symbol.name == 'Calculator'\n        \n        methods = [s for s in symbols if s.symbol_type == 'method']\n        assert len(methods) == 2\n        assert methods[0].parent == 'Calculator'\n    \n    def test_handle_syntax_error(self, tmp_path):\n        \"\"\"Test graceful handling of syntax errors.\"\"\"\n        code = 'def broken syntax here'\n        file = tmp_path / \"test.py\"\n        file.write_text(code)\n        \n        loader = PythonCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        # Should return empty list on syntax error\n        assert symbols == []\n    \n    def test_extract_module_docstring(self, tmp_path):\n        \"\"\"Test extraction of module-level docstring.\"\"\"\n        code = '''\n\"\"\"This is a module.\n\nIt does things.\n\"\"\"\n\ndef foo():\n    pass\n'''\n        file = tmp_path / \"test.py\"\n        file.write_text(code)\n        \n        loader = PythonCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        module_symbol = [s for s in symbols if s.symbol_type == 'module'][0]\n        assert 'This is a module' in module_symbol.docstring\n    \n    def test_extract_constants(self, tmp_path):\n        \"\"\"Test extraction of module-level constants.\"\"\"\n        code = '''\nMAX_SIZE = 100\nDEFAULT_NAME = \"test\"\n'''\n        file = tmp_path / \"test.py\"\n        file.write_text(code)\n        \n        loader = PythonCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        constants = [s for s in symbols if s.symbol_type == 'constant']\n        assert len(constants) == 2\n        assert any(s.name == 'MAX_SIZE' for s in constants)\n\nclass TestPHPCodeLoader:\n    def test_parse_function_with_phpdoc(self, tmp_path):\n        \"\"\"Test parsing PHP function with PHPDoc.\"\"\"\n        code = '''\n<?php\n/**\n * Greet someone by name.\n * @param string $name\n * @return string\n */\nfunction hello($name) {\n    return \"Hello, $name!\";\n}\n'''\n        file = tmp_path / \"test.php\"\n        file.write_text(code)\n        \n        loader = PHPCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        assert len(symbols) >= 1\n        func = [s for s in symbols if s.symbol_type == 'function'][0]\n        assert func.name == 'hello'\n        assert func.docstring is not None\n        assert 'Greet someone' in func.docstring\n    \n    def test_parse_class_with_methods(self, tmp_path):\n        \"\"\"Test parsing PHP class with methods.\"\"\"\n        code = '''\n<?php\nclass Calculator {\n    public function add($a, $b) {\n        return $a + $b;\n    }\n    \n    private function subtract($a, $b) {\n        return $a - $b;\n    }\n}\n'''\n        file = tmp_path / \"test.php\"\n        file.write_text(code)\n        \n        loader = PHPCodeLoader()\n        doc = loader.load(file)\n        symbols = doc.metadata['symbols']\n        \n        methods = [s for s in symbols if s.symbol_type == 'method']\n        assert len(methods) == 2\n        \n        add_method = [m for m in methods if m.name == 'add'][0]\n        assert add_method.visibility == 'public'\n        assert add_method.parent == 'Calculator'\n        \n        sub_method = [m for m in methods if m.name == 'subtract'][0]\n        assert sub_method.visibility == 'private'\n```\n\n2. Create tests/fixtures/ directory with sample Python and PHP files for integration testing.\n\n3. Add integration test in tests/test_integration.py:\n```python\n@pytest.mark.integration\ndef test_index_python_codebase(tmp_path, qdrant_client):\n    \"\"\"Test indexing Python source files.\"\"\"\n    # Create sample Python files\n    code_dir = tmp_path / \"src\"\n    code_dir.mkdir()\n    \n    (code_dir / \"utils.py\").write_text('''\ndef helper(x):\n    \"\"\"A helper function.\"\"\"\n    return x * 2\n''')\n    \n    # Index the directory\n    indexer = QdrantIndexer(url=\"http://localhost:6333\", collection_name=\"test-code\")\n    indexer.ensure_collection()\n    \n    from qdrant_indexer.chunkers import CodeChunker\n    chunker = CodeChunker()\n    \n    chunks = indexer.index_file(code_dir / \"utils.py\", chunker)\n    assert chunks > 0\n    \n    # Search for the function\n    results = qdrant_client.search(\n        collection_name=\"test-code\",\n        query_text=\"helper function\",\n        limit=5\n    )\n    assert len(results) > 0\n    assert results[0].payload['symbol_type'] == 'function'\n```",
+        "testStrategy": "Run pytest with coverage: (1) All Python loader tests pass, (2) All PHP loader tests pass, (3) Integration test passes with real Qdrant instance, (4) Achieve >80% code coverage for code_loaders package",
+        "priority": "high",
+        "dependencies": [
+          "17",
+          "18",
+          "20"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create tests/test_code_loaders.py with Python loader unit tests",
+            "description": "Create comprehensive unit tests for PythonCodeLoader class including function parsing, class/method extraction, syntax error handling, docstring extraction, and constant detection",
+            "dependencies": [],
+            "details": "Create tests/test_code_loaders.py with TestPythonCodeLoader class containing:\n1. test_parse_simple_function: Verify parsing of a function with docstring and type hints, check name, symbol_type='function', docstring content, and signature contains return type\n2. test_parse_class_with_methods: Test parsing of a class with multiple methods, verify 3 symbols (1 class + 2 methods), check parent relationship for methods\n3. test_handle_syntax_error: Test graceful handling when code has syntax errors, ensure empty symbols list is returned\n4. test_extract_module_docstring: Verify extraction of module-level docstrings as symbol_type='module'\n5. test_extract_constants: Test extraction of module-level constants (uppercase variable assignments) as symbol_type='constant'\nUse tmp_path fixture for creating temporary Python files. Import PythonCodeLoader from qdrant_indexer.code_loaders and CodeSymbol from qdrant_indexer.models. Follow existing test patterns from tests/test_loaders.py.",
+            "status": "pending",
+            "testStrategy": "Run pytest tests/test_code_loaders.py::TestPythonCodeLoader -v to verify all 5 Python loader tests pass",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add PHP loader unit tests to test_code_loaders.py",
+            "description": "Implement TestPHPCodeLoader class with comprehensive tests for PHP code parsing including PHPDoc extraction, class/method parsing, and visibility modifiers",
+            "dependencies": [
+              1
+            ],
+            "details": "Add TestPHPCodeLoader class to tests/test_code_loaders.py with:\n1. test_parse_function_with_phpdoc: Verify parsing of PHP function with PHPDoc comment, check name='hello', symbol_type='function', docstring extraction\n2. test_parse_class_with_methods: Test parsing PHP class with public and private methods, verify 2 methods extracted, check visibility='public' for add_method, visibility='private' for subtract_method, parent='Calculator' for both\nUse tmp_path fixture to create temporary .php files. Import PHPCodeLoader from qdrant_indexer.code_loaders. PHP test files should start with <?php tag. Follow same testing patterns as Python tests.",
+            "status": "pending",
+            "testStrategy": "Run pytest tests/test_code_loaders.py::TestPHPCodeLoader -v to verify all PHP loader tests pass",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Create tests/fixtures directory with sample code files",
+            "description": "Create tests/fixtures/ directory structure with representative Python and PHP source files for integration testing",
+            "dependencies": [],
+            "details": "Create tests/fixtures/ directory with sample files:\n1. tests/fixtures/sample.py: Python file with a class containing methods, module docstring, constants, and various symbol types for comprehensive testing\n2. tests/fixtures/sample.php: PHP file with class, methods with different visibility modifiers, PHPDoc comments, and functions\n3. tests/fixtures/utils.py: Simple Python utility file with helper functions for integration test use\nThese fixtures will be used by integration tests to verify end-to-end indexing. Follow patterns from existing fixtures in tests/conftest.py. Files should contain realistic code examples with proper docstrings/PHPDoc.",
+            "status": "pending",
+            "testStrategy": "Verify directory and files exist: ls -la tests/fixtures/ and check that sample files are valid Python/PHP syntax",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Add code loader fixtures to tests/conftest.py",
+            "description": "Extend tests/conftest.py with pytest fixtures for code loader testing including sample Python/PHP code content and file fixtures",
+            "dependencies": [
+              3
+            ],
+            "details": "Add to tests/conftest.py:\n1. @pytest.fixture sample_python_code() -> str: Return Python code string with function and class\n2. @pytest.fixture sample_python_file(tmp_path, sample_python_code): Create temporary .py file\n3. @pytest.fixture sample_php_code() -> str: Return PHP code string with class and methods\n4. @pytest.fixture sample_php_file(tmp_path, sample_php_code): Create temporary .php file\nFollow existing fixture patterns in conftest.py (e.g., sample_markdown_content, sample_markdown_file). These fixtures will be reused across multiple test files.",
+            "status": "pending",
+            "testStrategy": "Import and use fixtures in test files to verify they work: pytest tests/test_code_loaders.py -v --fixtures to list available fixtures",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add code indexing integration test to test_integration.py",
+            "description": "Implement integration test for end-to-end indexing of Python source code files using code loaders with real Qdrant instance",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Add to tests/test_integration.py as new test method in TestIndexerIntegration class:\n@pytest.mark.integration\ndef test_index_python_codebase(test_collection_name, qdrant_client, cleanup_collection, tmp_path):\n1. Create sample Python file with helper function containing docstring\n2. Initialize QdrantIndexer with test_collection_name and QDRANT_URL\n3. Call indexer.ensure_collection()\n4. Import CodeChunker from qdrant_indexer.chunkers (or RecursiveChunker as fallback)\n5. Call indexer.index_file() with code file and chunker\n6. Verify chunks > 0\n7. Search collection for 'helper function' using qdrant_client.search()\n8. Assert results contain symbol_type='function' in payload\nFollow existing integration test patterns from test_search_indexed_content. Test requires Qdrant running at localhost:6333.",
+            "status": "pending",
+            "testStrategy": "Run pytest -m integration tests/test_integration.py::TestIndexerIntegration::test_index_python_codebase -v with Qdrant running (docker compose up -d) to verify end-to-end code indexing works and achieves >80% coverage for code_loaders package",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "24",
+        "title": "Update documentation with code indexing examples and usage",
+        "description": "Update README.md and add usage examples for code-aware indexing features",
+        "details": "Update README.md:\n\n1. Add to \"Supported File Formats\" section:\n```markdown\n| Format | Extensions | Features |\n|--------|------------|----------|\n| ... existing formats ... |\n| Python | `.py`, `.pyi` | Symbol extraction (functions, classes, methods), docstring indexing, type annotations |\n| PHP | `.php`, `.php3`, `.php4`, `.php5`, `.phtml` | Symbol extraction (functions, classes, methods, traits, interfaces), PHPDoc indexing |\n```\n\n2. Add new section \"Code-Aware Indexing\":\n```markdown\n## Code-Aware Indexing\n\nQdrant Indexer supports code-aware parsing for Python and PHP source files. Instead of treating code as plain text, it extracts structured information (functions, classes, methods, docstrings) for semantic search over codebases.\n\n### Features\n\n- **Symbol-level indexing**: Each function, class, and method is indexed separately\n- **Docstring extraction**: Python docstrings and PHPDoc comments are extracted and searchable\n- **Rich metadata**: Store symbol type, qualified name, line numbers, visibility, and more\n- **Signature preservation**: Function signatures and type annotations are preserved\n- **Compatible with qdrant-mcp**: Query code with standard Qdrant clients\n\n### Usage Examples\n\n```bash\n# Index Python codebase\nqdrant-indexer index ./src -c my-code -p \"**/*.py\"\n\n# Index PHP project\nqdrant-indexer index ./app -c php-code -p \"**/*.php\"\n\n# Index mixed codebase (Python, PHP, and docs)\nqdrant-indexer index ./project -c all -p \"**/*.{py,php,md}\"\n\n# Index only docstrings (exclude source code)\nqdrant-indexer index ./src -c docs-only --docstrings-only\n\n# Disable code-aware parsing (treat as plain text)\nqdrant-indexer index ./src -c plain --code-mode=false\n```\n\n### Code Metadata\n\nCode chunks include enhanced metadata for filtering:\n\n```python\n{\n    \"language\": \"python\",           # \"python\" or \"php\"\n    \"symbol_type\": \"function\",      # \"function\", \"class\", \"method\", \"constant\"\n    \"symbol_name\": \"parse_data\",    # Symbol name\n    \"symbol_qualified_name\": \"Parser.parse_data\",  # Fully qualified name\n    \"signature\": \"(data: bytes) -> dict\",  # Function signature\n    \"docstring\": \"Parse input data...\",    # Extracted documentation\n    \"line_start\": 45,               # Start line number\n    \"line_end\": 67,                 # End line number\n    \"parent_class\": \"Parser\",       # Parent class (for methods)\n    \"visibility\": \"public\",         # PHP: public/private/protected\n}\n```\n\n### Querying Code\n\nUse qdrant-mcp or Qdrant client to search indexed code:\n\n```python\nfrom qdrant_client import QdrantClient\n\nclient = QdrantClient(url=\"http://localhost:6333\")\n\n# Search for functions related to parsing\nresults = client.search(\n    collection_name=\"my-code\",\n    query_text=\"parse JSON data\",\n    query_filter={\n        \"must\": [\n            {\"key\": \"language\", \"match\": {\"value\": \"python\"}},\n            {\"key\": \"symbol_type\", \"match\": {\"value\": \"function\"}}\n        ]\n    },\n    limit=10\n)\n```\n```\n\n3. Update CLI Reference with new options:\n```markdown\n- `--code-mode` - Enable code-aware parsing (default: true, auto-detected by extension)\n- `--include-source` - Include full source code in chunks (default: true)\n- `--docstrings-only` - Only index docstrings, not code bodies (default: false)\n```\n\n4. Create examples/code_indexing/ directory with sample files:\n- examples/code_indexing/sample.py (Python example)\n- examples/code_indexing/sample.php (PHP example)\n- examples/code_indexing/query_code.py (Query example)\n\n5. Add troubleshooting section for code indexing:\n```markdown\n### Code files not parsing correctly\n\nEnsure tree-sitter dependencies are installed:\n```bash\nuv sync\n```\n\nFor syntax errors in source files, the indexer will log warnings and skip the file. Check logs with `-vv` flag.\n```",
+        "testStrategy": "Manual review: (1) README renders correctly on GitHub, (2) All code examples are syntactically correct, (3) Example queries work against indexed code, (4) Documentation covers all new CLI flags",
+        "priority": "medium",
+        "dependencies": [
+          "22",
+          "23"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Update Supported File Formats section in README.md",
+            "description": "Add Python and PHP entries to the file formats table with their extensions and code-aware features",
+            "dependencies": [],
+            "details": "Edit the 'Supported File Formats' table in README.md (around line 164-172). Add two new rows after the ReStructuredText entry:\n- Python: `.py`, `.pyi` | Symbol extraction (functions, classes, methods), docstring indexing, type annotations\n- PHP: `.php`, `.php3`, `.php4`, `.php5`, `.phtml` | Symbol extraction (functions, classes, methods, traits, interfaces), PHPDoc indexing\n\nUse the Edit tool to insert these rows while preserving the existing markdown table formatting.",
+            "status": "pending",
+            "testStrategy": "Visual inspection: Verify the table renders correctly in GitHub's markdown preview and includes all file extensions and feature descriptions",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Add Code-Aware Indexing section to README.md",
+            "description": "Create a comprehensive new section explaining code-aware parsing features, usage examples, and metadata structure",
+            "dependencies": [
+              1
+            ],
+            "details": "Insert a new section after 'Supported File Formats' (after line 172) with:\n1. Introduction explaining code-aware parsing vs plain text\n2. Features subsection listing symbol-level indexing, docstring extraction, metadata, signatures, and qdrant-mcp compatibility\n3. Usage Examples subsection with 5-6 bash examples covering: Python indexing, PHP indexing, mixed codebases, docstrings-only mode, and disabled code-mode\n4. Code Metadata subsection showing example JSON payload with all fields: language, symbol_type, symbol_name, symbol_qualified_name, signature, docstring, line_start, line_end, parent_class, visibility\n5. Querying Code subsection with Python client example using query filters for language and symbol_type\n\nReference the CodeSymbol model (src/qdrant_indexer/models.py:56-88) to ensure metadata fields match implementation.",
+            "status": "pending",
+            "testStrategy": "Manual verification: (1) All bash commands are syntactically correct, (2) Metadata fields match CodeSymbol dataclass attributes, (3) Python query example is valid qdrant-client code, (4) Section is well-structured and flows logically",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Update CLI Reference section with code indexing options",
+            "description": "Add documentation for new CLI flags: --code-mode, --include-source, --docstrings-only to the index command reference",
+            "dependencies": [
+              2
+            ],
+            "details": "Edit the CLI Reference section (around line 60-103). In the Options list after --quiet, add three new option entries:\n- `--code-mode` - Enable code-aware parsing (default: true, auto-detected by extension)\n- `--include-source` - Include full source code in chunks (default: true)\n- `--docstrings-only` - Only index docstrings, not code bodies (default: false)\n\nNote: These flags reference task 22's implementation in cli.py. Update the default pattern documentation on line 76 to reflect the new default: `**/*.{md,txt,pdf,rst,py,php}` instead of just `**/*.md`.\n\nEnsure formatting matches existing option entries with proper indentation and descriptions.",
+            "status": "pending",
+            "testStrategy": "Cross-reference with cli.py implementation from task 22 to verify flag names and default values are accurate. Test that qdrant-indexer --help output matches documentation.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Create code indexing example files directory and samples",
+            "description": "Create examples/code_indexing/ directory with sample Python, PHP, and query script files",
+            "dependencies": [
+              2
+            ],
+            "details": "Create directory structure: examples/code_indexing/\n\n1. sample.py: Create a Python file with 2-3 functions and 1 class demonstrating docstrings, type annotations, and method definitions (20-30 lines)\n2. sample.php: Create a PHP file with 1 class, 2 methods with PHPDoc comments, and 1 standalone function (20-30 lines)\n3. query_code.py: Create a Python script showing how to use qdrant_client to:\n   - Connect to Qdrant\n   - Search for Python functions\n   - Search for PHP classes\n   - Filter by symbol_type and language\n   - Display results with metadata\n\nEnsure samples are simple, well-commented, and demonstrate the features mentioned in the Code-Aware Indexing section. Reference the metadata structure from CodeSymbol model.",
+            "status": "pending",
+            "testStrategy": "Manual testing: (1) Run qdrant-indexer on the sample files, (2) Verify they parse correctly without errors, (3) Execute query_code.py against indexed samples, (4) Verify query returns expected results with correct metadata",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add Troubleshooting section for code indexing",
+            "description": "Add a new troubleshooting subsection specifically for code parsing issues and tree-sitter dependencies",
+            "dependencies": [
+              3
+            ],
+            "details": "In the Troubleshooting section (starting line 220), add a new subsection after 'Files not being indexed':\n\n### Code files not parsing correctly\n\nEnsure tree-sitter dependencies are installed:\n```bash\nuv sync\n```\n\nFor syntax errors in source files, the indexer will log warnings and skip the file. Check logs with `-vv` flag:\n```bash\nqdrant-indexer index ./src -c code -vv\n```\n\nIf code files are being treated as plain text, verify:\n1. File extension is recognized (.py, .php)\n2. --code-mode is not disabled\n3. Check verbose output for loader selection\n\nInclude practical troubleshooting steps referencing the tree-sitter parsing library used by code loaders (src/qdrant_indexer/code_loaders/).",
+            "status": "pending",
+            "testStrategy": "Manual review: (1) Test suggested commands work correctly, (2) Verify -vv flag actually shows parsing details, (3) Ensure uv sync installs tree-sitter dependencies, (4) Validate troubleshooting steps resolve common issues",
+            "parentId": "undefined"
+          }
+        ]
+      },
+      {
+        "id": "25",
+        "title": "Performance testing and optimization for code indexing",
+        "description": "Verify performance meets success criteria (10K LOC in <60s) and optimize if needed",
+        "details": "Create performance test suite:\n\n1. Create tests/test_performance.py:\n```python\nimport pytest\nimport time\nfrom pathlib import Path\nfrom qdrant_indexer.indexer import QdrantIndexer\nfrom qdrant_indexer.chunkers import CodeChunker\n\n@pytest.mark.performance\ndef test_index_10k_loc_python(tmp_path, qdrant_client):\n    \"\"\"Test indexing 10,000 lines of Python code in under 60 seconds.\"\"\"\n    # Generate test Python files totaling ~10K LOC\n    code_dir = tmp_path / \"large_project\"\n    code_dir.mkdir()\n    \n    # Create 20 files with 500 lines each\n    for i in range(20):\n        code = generate_python_file(500)  # Helper to generate code\n        (code_dir / f\"module_{i}.py\").write_text(code)\n    \n    indexer = QdrantIndexer(\n        url=\"http://localhost:6333\",\n        collection_name=\"perf-test\"\n    )\n    indexer.ensure_collection()\n    \n    chunker = CodeChunker(chunk_size=512, overlap=50)\n    \n    start = time.time()\n    total_chunks = 0\n    for file in code_dir.glob(\"*.py\"):\n        chunks = indexer.index_file(file, chunker)\n        total_chunks += chunks\n    elapsed = time.time() - start\n    \n    assert elapsed < 60, f\"Indexing took {elapsed:.2f}s, expected <60s\"\n    assert total_chunks > 0\n    print(f\"Indexed {total_chunks} chunks in {elapsed:.2f}s\")\n\ndef generate_python_file(num_lines: int) -> str:\n    \"\"\"Generate Python file with specified number of lines.\"\"\"\n    code = ['\"\"\"Test module.\"\"\"', '']\n    \n    num_functions = num_lines // 25  # ~25 lines per function\n    for i in range(num_functions):\n        code.append(f'def function_{i}(x, y):')\n        code.append(f'    \"\"\"Function {i} docstring.\"\"\"')\n        code.append(f'    result = x + y')\n        code.append(f'    return result')\n        code.append('')\n    \n    return '\\n'.join(code)\n```\n\n2. Profile code to identify bottlenecks:\n```python\nimport cProfile\nimport pstats\n\n# Profile indexing operation\nprofiler = cProfile.Profile()\nprofiler.enable()\n\n# ... run indexing ...\n\nprofiler.disable()\nstats = pstats.Stats(profiler)\nstats.sort_stats('cumulative')\nstats.print_stats(20)\n```\n\n3. Potential optimizations:\n- Batch symbol extraction (process multiple files in parallel)\n- Cache tree-sitter parser instances\n- Optimize embedding generation (batch multiple chunks)\n- Use connection pooling for Qdrant uploads\n\n4. Add performance benchmarks to CI:\n```yaml\n# .github/workflows/performance.yml\nname: Performance Tests\non: [pull_request]\njobs:\n  performance:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v3\n      - name: Start Qdrant\n        run: docker run -d -p 6333:6333 qdrant/qdrant\n      - name: Run performance tests\n        run: uv run pytest -m performance\n```\n\n5. Document performance characteristics in README:\n```markdown\n## Performance\n\n- Index 10,000 lines of Python code: ~45 seconds\n- Index 10,000 lines of PHP code: ~50 seconds\n- Typical throughput: ~200 LOC/second\n- Memory usage: ~500MB for embedding model + ~50MB per 1000 files\n```",
+        "testStrategy": "Run performance tests on representative codebases: (1) 10K LOC Python project completes in <60s, (2) 10K LOC PHP project completes in <60s, (3) Memory usage stays within reasonable bounds, (4) Profile and optimize any bottlenecks found",
+        "priority": "medium",
+        "dependencies": [
+          "23"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create performance test file with test infrastructure",
+            "description": "Create tests/test_performance.py with pytest markers, helper functions, and test fixtures for generating large Python codebases",
+            "dependencies": [],
+            "details": "Create tests/test_performance.py with: (1) @pytest.mark.performance decorator configuration, (2) generate_python_file(num_lines) helper that creates syntactically valid Python code with functions and docstrings, (3) generate_php_file(num_lines) helper for PHP code generation, (4) Fixtures for temporary large codebases. The helper functions should generate realistic code structures with functions, classes, docstrings, and comments to accurately simulate real-world indexing performance.",
+            "status": "pending",
+            "testStrategy": "Run pytest --collect-only to verify test is discovered, verify generated code is syntactically valid by parsing with ast.parse() for Python and tree-sitter for PHP",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement 10K LOC Python performance test",
+            "description": "Create test_index_10k_loc_python that verifies indexing 10,000 lines of Python code completes in under 60 seconds",
+            "dependencies": [
+              1
+            ],
+            "details": "In tests/test_performance.py, implement test_index_10k_loc_python(tmp_path): (1) Generate 20 Python files with 500 lines each (~10K LOC total) using generate_python_file helper, (2) Initialize QdrantIndexer with test collection, (3) Create RecursiveChunker(chunk_size=512, overlap=50) matching production settings, (4) Time the indexing with time.time(), (5) Assert elapsed < 60 seconds, (6) Assert total_chunks > 0, (7) Print performance metrics (time, chunks, LOC/sec). Use existing patterns from tests/test_indexer.py for QdrantIndexer initialization and mocking.",
+            "status": "pending",
+            "testStrategy": "Run pytest -m performance -v tests/test_performance.py::test_index_10k_loc_python with Qdrant running, verify test passes and completes in <60s, verify memory usage stays reasonable",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement 10K LOC PHP performance test",
+            "description": "Create test_index_10k_loc_php that verifies indexing 10,000 lines of PHP code completes in under 60 seconds",
+            "dependencies": [
+              1
+            ],
+            "details": "In tests/test_performance.py, implement test_index_10k_loc_php(tmp_path): (1) Generate 20 PHP files with 500 lines each using generate_php_file helper, including classes, functions, methods, traits, and PHPDoc comments, (2) Initialize QdrantIndexer with test collection, (3) Use same chunker configuration as Python test, (4) Time and assert performance (<60s), (5) Print metrics. Follow same pattern as Python test but adapt for PHP file extensions (.php) and code structure.",
+            "status": "pending",
+            "testStrategy": "Run pytest -m performance -v tests/test_performance.py::test_index_10k_loc_php with Qdrant running, verify test passes in <60s, compare performance with Python test",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Profile and optimize performance bottlenecks",
+            "description": "Use cProfile to identify performance bottlenecks in indexing pipeline and implement optimizations",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Create tests/profile_indexing.py script: (1) Use cProfile to profile the index_file and index_directory methods with 10K LOC, (2) Generate pstats output showing top 20 time-consuming functions, (3) Identify bottlenecks in: embedding generation (batch processing in indexer.py:114), tree-sitter parsing (code_loaders), Qdrant uploads (batch size in indexer.py:134), (4) Document findings in comments, (5) If performance doesn't meet <60s target, implement optimizations: increase batch_size parameter (currently 100), optimize symbol extraction in code_loaders, consider parallel file processing. Maintain compatibility with existing test suite.",
+            "status": "pending",
+            "testStrategy": "Run profiling script and verify optimizations improve performance, re-run performance tests to confirm <60s target met, run full test suite (pytest tests/) to ensure no regressions",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add performance markers to pyproject.toml and document results",
+            "description": "Update pytest configuration and document performance characteristics in README",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Update pyproject.toml [tool.pytest.ini_options] to add 'performance: marks tests as performance tests (may take 30-60s each)' marker. Add performance section to README.md with: (1) Performance table showing LOC/second for Python and PHP, (2) Typical indexing times for 10K LOC projects, (3) Memory usage characteristics (~500MB for embedding model), (4) Batch size recommendations, (5) Instructions for running performance tests: 'pytest -m performance'. Include actual measured results from test runs. Note: CI/CD workflow creation deferred as .github/workflows/ does not exist yet.",
+            "status": "pending",
+            "testStrategy": "Verify pytest.ini_options.markers includes performance marker, run pytest --markers to confirm marker is registered, verify README renders correctly and includes accurate performance data from test runs",
+            "parentId": "undefined"
+          }
+        ]
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:36:44.767Z",
-      "taskCount": 13,
-      "completedCount": 13,
+      "lastModified": "2025-12-08T20:14:32.761Z",
+      "taskCount": 25,
+      "completedCount": 15,
       "tags": [
         "master"
       ]

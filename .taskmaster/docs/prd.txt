@@ -1,0 +1,249 @@
+# Product Requirements Document: Code-Aware Parsing for Python and PHP
+
+## Overview
+
+Extend qdrant_indexer to support code-aware indexing of Python and PHP source files. Instead of treating code as plain text, extract structured information (functions, classes, methods, docstrings) to enable semantic search over codebases.
+
+## Goals
+
+1. Index Python (.py) and PHP (.php) source files with structural awareness
+2. Extract symbols: functions, classes, methods, constants
+3. Preserve docstrings/PHPDoc as searchable documentation
+4. Store rich metadata enabling filtered searches (by symbol type, file, etc.)
+5. Maintain compatibility with existing qdrant-mcp for querying
+
+## Non-Goals
+
+- Full code intelligence (call graphs, type resolution, cross-file references)
+- Language server protocol integration
+- Real-time indexing or file watching
+- Support for languages beyond Python and PHP in this iteration
+
+## Technical Approach
+
+### Python Parsing (using `ast` module)
+
+Use Python's built-in `ast` module to parse source files and extract:
+
+- **Functions**: name, arguments, return annotation, docstring, line numbers
+- **Classes**: name, base classes, docstring, line numbers
+- **Methods**: name, arguments, return annotation, docstring, parent class
+- **Module-level docstrings**: file-level documentation
+- **Constants**: module-level assignments (NAME = value pattern)
+
+### PHP Parsing (using `tree-sitter-php`)
+
+Use tree-sitter with PHP grammar to parse source files and extract:
+
+- **Functions**: name, parameters, return type (if typed), PHPDoc
+- **Classes**: name, extends, implements, PHPDoc
+- **Methods**: name, visibility, parameters, return type, PHPDoc
+- **Interfaces/Traits**: name, methods, PHPDoc
+- **Constants**: class constants and define() calls
+
+### Storage Model
+
+Each extracted symbol becomes one or more chunks with enhanced metadata:
+
+```python
+payload = {
+    # Standard fields (qdrant-mcp compatible)
+    "document": str,           # The code/docstring content
+    "source": str,             # File path
+    "chunk_index": int,
+    "total_chunks": int,
+    "timestamp": str,
+
+    # Code-specific metadata
+    "language": str,           # "python" or "php"
+    "symbol_type": str,        # "function", "class", "method", "constant"
+    "symbol_name": str,        # e.g., "parse_segment"
+    "symbol_qualified_name": str,  # e.g., "MyClass.parse_segment"
+    "signature": str,          # e.g., "(data: bytes) -> Segment"
+    "docstring": str,          # Extracted documentation
+    "line_start": int,         # Starting line number
+    "line_end": int,           # Ending line number
+    "parent_class": str | None, # For methods: the containing class
+    "visibility": str | None,  # For PHP: public/private/protected
+}
+```
+
+### Chunking Strategy for Code
+
+Code requires different chunking than prose:
+
+1. **Symbol-based chunking**: Each function/method/class is its own chunk
+2. **Large symbol handling**: If a function exceeds chunk_size, split by logical boundaries (nested functions, comment blocks)
+3. **Context preservation**: Include signature + docstring even when splitting body
+4. **Docstring extraction**: Store docstring separately for better semantic search
+
+## Implementation Components
+
+### 1. Code Loader Base Class
+
+Create `CodeLoader` abstract base class extending `DocumentLoader`:
+- `extract_symbols(content: str) -> list[CodeSymbol]`
+- `get_symbol_context(symbol: CodeSymbol) -> str`
+
+### 2. Python Code Loader
+
+`PythonCodeLoader` implementation:
+- Use `ast.parse()` to build AST
+- Walk tree with `ast.NodeVisitor` to extract symbols
+- Handle syntax errors gracefully (log and skip)
+- Extract type annotations where present
+
+### 3. PHP Code Loader
+
+`PHPCodeLoader` implementation:
+- Initialize tree-sitter with PHP grammar
+- Query for function/class/method nodes
+- Extract PHPDoc comments associated with symbols
+- Handle PHP-specific constructs (traits, interfaces, namespaces)
+
+### 4. Code Symbol Model
+
+New dataclass in `models.py`:
+
+```python
+@dataclass
+class CodeSymbol:
+    name: str
+    qualified_name: str
+    symbol_type: str  # function, class, method, constant
+    content: str      # Full source code of the symbol
+    docstring: str | None
+    signature: str | None
+    line_start: int
+    line_end: int
+    parent: str | None  # Parent class name for methods
+    visibility: str | None  # public/private/protected
+    language: str
+    metadata: dict  # Additional language-specific metadata
+```
+
+### 5. Code-Aware Chunker
+
+`CodeChunker` that respects symbol boundaries:
+- Primary strategy: one chunk per symbol
+- Fallback: split large symbols at logical points
+- Always preserve: signature line + docstring in each chunk
+
+### 6. Updated Loader Registry
+
+Extend `LOADERS` dict in `loaders.py`:
+
+```python
+LOADERS = {
+    # Existing
+    ".md": MarkdownLoader,
+    ".txt": TextLoader,
+    ".pdf": PDFLoader,
+    ".rst": ReStructuredTextLoader,
+    # New code loaders
+    ".py": PythonCodeLoader,
+    ".pyi": PythonCodeLoader,
+    ".php": PHPCodeLoader,
+    ".php3": PHPCodeLoader,
+    ".php4": PHPCodeLoader,
+    ".php5": PHPCodeLoader,
+    ".phtml": PHPCodeLoader,
+}
+```
+
+### 7. CLI Updates
+
+Add new options to `index` command:
+- `--code-mode`: Enable code-aware parsing (auto-detected by extension)
+- `--include-source`: Include full source code in chunks (default: True)
+- `--docstrings-only`: Only index docstrings, not code bodies
+
+Update default patterns:
+```
+--pattern "**/*.{md,rst,txt,pdf,py,php}"
+```
+
+## Dependencies
+
+### New Dependencies
+
+```toml
+[project.dependencies]
+# Existing...
+tree-sitter = ">=0.21.0"
+tree-sitter-php = ">=0.22.0"
+```
+
+### Development Dependencies
+
+```toml
+[project.optional-dependencies]
+dev = [
+    # Existing...
+    "tree-sitter-python>=0.21.0",  # For testing Python parsing comparison
+]
+```
+
+## File Structure
+
+```
+src/qdrant_indexer/
+├── __init__.py
+├── cli.py
+├── config.py
+├── models.py          # Add CodeSymbol
+├── loaders.py         # Existing loaders
+├── code_loaders/      # NEW: Code-specific loaders
+│   ├── __init__.py
+│   ├── base.py        # CodeLoader ABC
+│   ├── python.py      # PythonCodeLoader
+│   └── php.py         # PHPCodeLoader
+├── chunkers.py        # Add CodeChunker
+├── indexer.py
+└── filters.py
+```
+
+## Testing Requirements
+
+### Unit Tests
+
+1. **Python loader tests**:
+   - Parse simple function
+   - Parse class with methods
+   - Handle syntax errors
+   - Extract docstrings (all formats: """, Google, NumPy, Sphinx)
+   - Extract type annotations
+
+2. **PHP loader tests**:
+   - Parse function with PHPDoc
+   - Parse class with methods
+   - Handle visibility modifiers
+   - Extract from interfaces/traits
+   - Handle namespaced code
+
+3. **Code chunker tests**:
+   - Single symbol per chunk
+   - Large symbol splitting
+   - Signature preservation
+
+### Integration Tests
+
+1. Index a small Python project, verify searchable
+2. Index a small PHP project, verify searchable
+3. Mixed codebase indexing (Python + PHP + docs)
+
+## Success Criteria
+
+1. Python files indexed with symbol-level granularity
+2. PHP files indexed with symbol-level granularity
+3. Docstrings/PHPDoc searchable as documentation
+4. Symbol metadata enables filtered queries
+5. No regression in existing documentation indexing
+6. Performance: Index 10K LOC in under 60 seconds
+
+## Future Enhancements (Out of Scope)
+
+- Additional languages (TypeScript, Rust, Go)
+- Cross-reference extraction (imports, calls)
+- Incremental indexing
+- IDE integration

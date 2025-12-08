@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 
+from qdrant_indexer.models import CodeSymbol
+
 
 class Chunker(ABC):
     """Abstract base class for text chunking strategies."""
@@ -217,3 +219,120 @@ def merge_small_chunks(chunks: list[str], min_size: int, max_size: int | None = 
         result.append(current)
 
     return result
+
+
+class CodeChunker(Chunker):
+    """Code-aware chunker that respects symbol boundaries.
+
+    Primary strategy: One chunk per symbol.
+    Fallback: Split large symbols at logical points while preserving signature.
+    """
+
+    def __init__(
+        self, chunk_size: int = 512, overlap: int = 50, include_source: bool = True
+    ):
+        """Initialize the code chunker.
+
+        Args:
+            chunk_size: Maximum size of each chunk in characters.
+            overlap: Number of characters to overlap for split symbols.
+            include_source: Include full source code (vs docstring only).
+        """
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        self.include_source = include_source
+
+    def chunk(self, text: str) -> list[str]:
+        """Chunk text (fallback for non-code documents).
+
+        For code documents, use chunk_symbols() instead.
+
+        Args:
+            text: Plain text to chunk.
+
+        Returns:
+            List of text chunks.
+        """
+        # Fallback to recursive chunking for plain text
+        return RecursiveChunker(self.chunk_size, self.overlap).chunk(text)
+
+    def chunk_symbol(self, symbol: CodeSymbol) -> list[str]:
+        """Chunk a single code symbol.
+
+        Args:
+            symbol: The code symbol to chunk.
+
+        Returns:
+            List of text chunks for this symbol.
+        """
+        # Build header with symbol info
+        header_parts = [f"{symbol.symbol_type}: {symbol.qualified_name}"]
+
+        if symbol.signature:
+            header_parts.append(symbol.signature)
+
+        if symbol.docstring:
+            header_parts.append(f"\nDocumentation:\n{symbol.docstring}")
+
+        header = "\n".join(header_parts)
+
+        # Choose content to chunk
+        if self.include_source:
+            full_content = f"{header}\n\nSource:\n{symbol.content}"
+        else:
+            full_content = header
+
+        # If fits in one chunk, return as-is
+        if len(full_content) <= self.chunk_size:
+            return [full_content]
+
+        # Symbol too large, need to split
+        chunks: list[str] = []
+
+        if self.include_source:
+            # Calculate space for content in first chunk
+            header_with_prefix = f"{header}\n\nSource:\n"
+            remaining_space = self.chunk_size - len(header_with_prefix)
+
+            if remaining_space > 0:
+                first_chunk = header_with_prefix + symbol.content[:remaining_space]
+                chunks.append(first_chunk)
+                remaining = symbol.content[remaining_space:]
+            else:
+                # Header alone is too large, split it
+                chunks = split_text_with_overlap(
+                    header, self.chunk_size, self.overlap
+                )
+                remaining = symbol.content
+
+            # Split remaining source code
+            if remaining:
+                source_chunks = split_text_with_overlap(
+                    remaining, self.chunk_size, self.overlap
+                )
+                chunks.extend(source_chunks)
+        else:
+            # Docstring only mode: split header if needed
+            chunks = split_text_with_overlap(
+                full_content, self.chunk_size, self.overlap
+            )
+
+        return chunks
+
+    def chunk_symbols(
+        self, symbols: list[CodeSymbol]
+    ) -> list[tuple[str, CodeSymbol]]:
+        """Chunk a list of code symbols.
+
+        Args:
+            symbols: List of code symbols to chunk.
+
+        Returns:
+            List of (chunk_text, source_symbol) tuples.
+        """
+        result: list[tuple[str, CodeSymbol]] = []
+        for symbol in symbols:
+            symbol_chunks = self.chunk_symbol(symbol)
+            for chunk_text in symbol_chunks:
+                result.append((chunk_text, symbol))
+        return result
