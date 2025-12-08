@@ -1,0 +1,182 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Bootstrap Python Project with uv",
+        "description": "Initialize the Python project structure using uv, create pyproject.toml with all required dependencies (qdrant-client, fastembed, typer, rich, pymupdf, python-frontmatter), and set up the src/qdrant_indexer/ package structure.",
+        "details": "1. Run `uv init --app` to create basic project structure\n2. Create pyproject.toml with:\n   - Project metadata (name, version, description)\n   - Python requirement >=3.10\n   - Dependencies: qdrant-client>=1.12.0, fastembed>=0.6.0, typer>=0.12.0, rich>=13.0.0, pymupdf>=1.24.0, python-frontmatter>=1.0.0\n   - Entry point: qdrant-indexer = \"qdrant_indexer.cli:app\"\n   - Build system using hatchling\n3. Create src/qdrant_indexer/ directory structure with __init__.py\n4. Run `uv sync` to generate uv.lock and install dependencies",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Implement Document Data Model",
+        "description": "Create the core data structures for representing documents and their metadata in src/qdrant_indexer/models.py",
+        "details": "Create dataclasses/Pydantic models:\n1. Document class with fields:\n   - content: str (the text content)\n   - metadata: dict (source file, frontmatter, etc.)\n   - source_path: Path (original file path)\n2. Chunk class with fields:\n   - text: str (chunk content)\n   - index: int (chunk position)\n   - total_chunks: int\n   - metadata: dict (inherited from document + chunk-specific)\n3. IndexedPoint class representing a Qdrant point:\n   - id: str/int\n   - vector: list[float]\n   - payload: dict",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Implement Document Loaders",
+        "description": "Create document loaders for different file formats in src/qdrant_indexer/loaders.py - supporting Markdown, Text, PDF, and ReStructuredText files.",
+        "details": "1. Create abstract base DocumentLoader class with load(path: Path) -> Document method\n2. Implement MarkdownLoader:\n   - Use python-frontmatter to extract YAML frontmatter as metadata\n   - Return content without frontmatter\n3. Implement TextLoader:\n   - Simple file read with UTF-8 encoding\n   - Basic metadata (filename, size, modified time)\n4. Implement PDFLoader:\n   - Use pymupdf (fitz) to extract text from PDF pages\n   - Include page numbers in metadata\n5. Implement ReStructuredTextLoader:\n   - Parse .rst files\n   - Extract directives/metadata if present\n6. Create get_loader(file_path: Path) factory function\n   - Map extensions to loaders: .md -> MarkdownLoader, .txt -> TextLoader, .pdf -> PDFLoader, .rst -> ReStructuredTextLoader\n   - Default to TextLoader for unknown extensions\n7. Create LOADERS dict for extension mapping",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Implement Chunking Strategies",
+        "description": "Create text chunking implementations in src/qdrant_indexer/chunkers.py with recursive character splitting as the primary strategy.",
+        "details": "1. Create abstract base Chunker class with chunk(text: str) -> List[str] method\n2. Implement RecursiveChunker (primary strategy):\n   - Parameters: chunk_size (default 512), overlap (default 50)\n   - Split hierarchy: \\n\\n (paragraphs) -> \\n (lines) -> . (sentences) -> space (words)\n   - Ensure chunks don't exceed chunk_size\n   - Maintain overlap between consecutive chunks for context continuity\n3. Implement FixedSizeChunker (simple alternative):\n   - Split text into fixed-size chunks with overlap\n   - No semantic awareness\n4. Create helper functions:\n   - split_text_with_overlap(text, size, overlap)\n   - merge_small_chunks(chunks, min_size)\n5. Consider adding SemanticChunker placeholder for future enhancement",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Implement Core Indexer",
+        "description": "Create the main QdrantIndexer class in src/qdrant_indexer/indexer.py that orchestrates document loading, chunking, embedding, and uploading to Qdrant.",
+        "details": "1. Create QdrantIndexer class with:\n   - __init__(qdrant_url, collection_name, embedding_model=\"sentence-transformers/all-MiniLM-L6-v2\")\n   - Initialize QdrantClient and FastEmbed TextEmbedding\n2. Implement ensure_collection() method:\n   - Check if collection exists with client.collection_exists()\n   - Create with vectors_config: size=384 (all-MiniLM-L6-v2), distance=Cosine\n3. Implement index_directory() method:\n   - Parameters: path, pattern, chunker, batch_size\n   - Glob files matching pattern\n   - For each file: load with appropriate loader, chunk, embed, create points\n   - Batch upload with client.upsert()\n   - Include progress reporting\n4. Implement index_file() method for single file indexing\n5. Create point ID generation (hash of file path + chunk index)\n6. Build payload with: text, source, chunk_index, total_chunks, timestamp, metadata",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          3,
+          4
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implement CLI with Typer",
+        "description": "Create the command-line interface in src/qdrant_indexer/cli.py using Typer with commands for indexing, listing, and deleting collections.",
+        "details": "1. Create Typer app instance\n2. Implement 'index' command:\n   - Arguments: path (directory to index)\n   - Options: --collection, --url (default localhost:6333), --chunk-size, --chunk-overlap, --pattern, --batch-size, --exclude\n   - Progress output with rich\n3. Implement 'list-collections' command:\n   - Option: --url\n   - Display all collections with counts\n4. Implement 'delete-collection' command:\n   - Arguments: collection name\n   - Options: --url, --yes/-y (skip confirmation)\n   - Confirmation prompt using typer.confirm()\n5. Implement 'reindex' command:\n   - Delete existing collection data for source files, then re-index\n6. Add rich console output for progress and status messages\n7. Handle errors gracefully with helpful messages",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          5
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Implement Configuration System",
+        "description": "Create configuration handling in src/qdrant_indexer/config.py supporting both CLI arguments and optional .qdrant-indexer.toml config file.",
+        "details": "1. Define Config dataclass/Pydantic model with sections:\n   - QdrantConfig: url\n   - EmbeddingConfig: model, cache_dir\n   - ChunkingConfig: strategy, chunk_size, chunk_overlap\n   - IndexingConfig: batch_size, exclude_patterns\n2. Implement load_config() function:\n   - Search for .qdrant-indexer.toml in current dir and parents\n   - Parse TOML file if found\n   - Return default config if not found\n3. Implement merge_config() to combine file config with CLI args\n   - CLI args take precedence\n4. Add config validation\n5. Support environment variables for Qdrant URL (QDRANT_URL)",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Create Nix Flake with uv2nix",
+        "description": "Create flake.nix using uv2nix to package the application for Nix, providing both a package and development shell.",
+        "details": "1. Create flake.nix with inputs:\n   - nixpkgs (nixos-unstable)\n   - pyproject-nix\n   - uv2nix\n   - pyproject-build-systems\n2. Configure outputs:\n   - Load workspace with uv2nix.lib.workspace.loadWorkspace\n   - Build Python set with dependencies\n   - Apply overlays for wheel support\n   - Create virtual environment with mkVirtualEnv\n3. Define packages.${system}.default as the built package\n4. Define devShells.${system}.default with:\n   - The virtual environment\n   - uv for development\n   - Helpful shellHook message\n5. Test with `nix build` and `nix develop`\n6. Ensure fastembed model caching works correctly",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          1
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Add Unit Tests",
+        "description": "Create comprehensive unit tests for loaders, chunkers, and indexer components in tests/ directory.",
+        "details": "1. Add pytest and pytest-cov to dev dependencies\n2. Create tests/ directory structure:\n   - tests/__init__.py\n   - tests/conftest.py (fixtures)\n   - tests/test_loaders.py\n   - tests/test_chunkers.py\n   - tests/test_indexer.py\n3. Test loaders:\n   - Test each loader with sample files\n   - Test metadata extraction\n   - Test error handling for missing/invalid files\n4. Test chunkers:\n   - Test RecursiveChunker with various text sizes\n   - Verify chunk sizes respect limits\n   - Verify overlap is maintained\n   - Test edge cases (empty text, text smaller than chunk_size)\n5. Test indexer:\n   - Mock Qdrant client for unit tests\n   - Test collection creation\n   - Test point generation\n   - Test batch uploading logic\n6. Create test fixtures with sample documents",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          3,
+          4,
+          5
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Add Integration Tests",
+        "description": "Create integration tests that test the full indexing pipeline against a real Qdrant instance.",
+        "details": "1. Create tests/test_integration.py\n2. Add pytest markers for integration tests (can be skipped if Qdrant unavailable)\n3. Test full workflow:\n   - Create test documents in tmp_path\n   - Index documents to test collection\n   - Verify documents are searchable\n   - Clean up test collection\n4. Test CLI commands:\n   - Test index command with subprocess\n   - Test list-collections\n   - Test delete-collection\n5. Add docker-compose.yml or instructions for running Qdrant locally\n6. Configure CI to optionally run integration tests",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          9
+        ],
+        "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": 11,
+        "title": "Create README and Documentation",
+        "description": "Write comprehensive README.md with installation instructions, usage examples, and configuration documentation.",
+        "details": "1. Create README.md with sections:\n   - Project overview and purpose\n   - Installation (Nix flake, pip/uv)\n   - Quick start guide\n   - CLI command reference with examples\n   - Configuration file format\n   - Supported file formats\n   - Integration with qdrant-mcp\n2. Add examples/ directory:\n   - examples/index-docs.sh (basic usage script)\n   - examples/config/.qdrant-indexer.toml (sample config)\n3. Document embedding model compatibility with qdrant-mcp\n4. Add troubleshooting section for common issues",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          6,
+          8
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 12,
+        "title": "Add Progress Reporting and Logging",
+        "description": "Implement rich progress bars and structured logging throughout the indexing process.",
+        "details": "1. Add rich Progress context manager for file processing\n2. Show progress:\n   - File discovery progress\n   - Per-file chunking progress\n   - Embedding generation progress\n   - Upload batch progress\n3. Add --verbose/-v flag for detailed output\n4. Add --quiet/-q flag for minimal output\n5. Implement Python logging with configurable levels\n6. Log important events: files processed, chunks created, points uploaded\n7. Summary statistics at end: total files, chunks, time elapsed",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          6
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 13,
+        "title": "Implement File Filtering and Exclusion",
+        "description": "Add support for glob patterns to include/exclude files during indexing, with sensible defaults.",
+        "details": "1. Add --pattern option for include patterns (default: \"**/*.{md,rst,txt}\")\n2. Add --exclude option for exclude patterns\n3. Default exclusions:\n   - node_modules/**\n   - **/.git/**\n   - **/__pycache__/**\n   - **/*.pyc\n   - **/venv/**\n   - **/.venv/**\n4. Support multiple --exclude flags\n5. Use pathlib and fnmatch for pattern matching\n6. Respect .gitignore if present (optional enhancement)\n7. Log which files are being skipped and why (in verbose mode)",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [
+          5
+        ],
+        "priority": "medium",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-12-08T12:57:28.305Z",
+      "description": "Default tasks context",
+      "updated": "2025-12-08T12:59:21.521Z"
+    }
+  }
+}
