@@ -3,7 +3,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 from qdrant_client import QdrantClient
@@ -14,6 +14,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from qdrant_indexer.chunkers import RecursiveChunker
+from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
 from qdrant_indexer.indexer import QdrantIndexer
 
 app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collections")
@@ -66,6 +67,8 @@ def index(
     chunk_overlap: Annotated[int, typer.Option("--chunk-overlap", help="Overlap between chunks")] = 50,
     pattern: Annotated[str, typer.Option("--pattern", "-p", help="Glob pattern for files")] = "**/*.md",
     batch_size: Annotated[int, typer.Option("--batch-size", help="Batch size for uploads")] = 100,
+    exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
+    no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
     verbose: Annotated[int, typer.Option("--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)")] = 0,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
 ) -> None:
@@ -110,17 +113,37 @@ def index(
 
         chunker = RecursiveChunker(chunk_size=chunk_size, overlap=chunk_overlap)
 
-        # Discover files first
-        files = list(path.glob(pattern))
-        files = [f for f in files if f.is_file()]
+        # Discover and filter files
+        all_files = list(path.glob(pattern))
+        all_files = [f for f in all_files if f.is_file()]
+
+        files, skipped = filter_files(
+            all_files,
+            path,
+            exclude_patterns=exclude,
+            use_defaults=not no_default_excludes,
+        )
 
         if not files:
             if not quiet:
                 console.print(f"[yellow]No files found matching pattern '{pattern}'[/yellow]")
+                if skipped:
+                    console.print(f"[dim]({len(skipped)} files excluded by patterns)[/dim]")
             return
 
         if not quiet:
-            console.print(f"Found [cyan]{len(files)}[/cyan] files to index")
+            msg = f"Found [cyan]{len(files)}[/cyan] files to index"
+            if skipped:
+                msg += f" [dim]({len(skipped)} excluded)[/dim]"
+            console.print(msg)
+
+        if verbose >= 2 and skipped:
+            console.print("\n[dim]Excluded files:[/dim]")
+            for f in skipped[:10]:  # Show first 10
+                console.print(f"  [dim]• {f.relative_to(path)}[/dim]")
+            if len(skipped) > 10:
+                console.print(f"  [dim]... and {len(skipped) - 10} more[/dim]")
+            console.print()
 
         # Progress bar for file indexing
         with Progress(
@@ -165,6 +188,8 @@ def index(
             summary.add_column()
             summary.add_row("Files indexed:", f"[cyan]{total_files}[/cyan]")
             summary.add_row("Chunks created:", f"[cyan]{total_chunks}[/cyan]")
+            if skipped:
+                summary.add_row("Files skipped:", f"[dim]{len(skipped)}[/dim]")
             summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
 
             if failed_files:
@@ -259,6 +284,15 @@ def delete_collection(
     except Exception as e:
         display_error(str(e))
         raise typer.Exit(1)
+
+
+@app.command("show-excludes")
+def show_excludes() -> None:
+    """Show default exclusion patterns."""
+    console.print("[bold]Default exclusion patterns:[/bold]\n")
+    for pattern in DEFAULT_EXCLUDE_PATTERNS:
+        console.print(f"  • {pattern}")
+    console.print("\n[dim]Use --no-default-excludes to disable these.[/dim]")
 
 
 if __name__ == "__main__":

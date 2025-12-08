@@ -570,19 +570,20 @@
         "description": "Add support for glob patterns to include/exclude files during indexing, with sensible defaults.",
         "details": "1. Add --pattern option for include patterns (default: \"**/*.{md,rst,txt}\")\n2. Add --exclude option for exclude patterns\n3. Default exclusions:\n   - node_modules/**\n   - **/.git/**\n   - **/__pycache__/**\n   - **/*.pyc\n   - **/venv/**\n   - **/.venv/**\n4. Support multiple --exclude flags\n5. Use pathlib and fnmatch for pattern matching\n6. Respect .gitignore if present (optional enhancement)\n7. Log which files are being skipped and why (in verbose mode)",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "5"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-08T14:20:47.965Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:17:05.766Z",
+      "lastModified": "2025-12-08T14:20:47.965Z",
       "taskCount": 13,
-      "completedCount": 9,
+      "completedCount": 10,
       "tags": [
         "master"
       ]

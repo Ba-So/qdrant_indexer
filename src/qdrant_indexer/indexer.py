@@ -11,6 +11,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker
+from qdrant_indexer.filters import filter_files
 from qdrant_indexer.loaders import get_loader
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,7 @@ class QdrantIndexer:
         pattern: str = "**/*.md",
         chunker: Chunker | None = None,
         batch_size: int = 100,
+        exclude_patterns: list[str] | None = None,
         on_progress: ProgressCallback | None = None,
     ) -> dict:
         """Index all matching files in a directory.
@@ -160,17 +162,24 @@ class QdrantIndexer:
             pattern: Glob pattern for file matching.
             chunker: Chunker instance (defaults to RecursiveChunker).
             batch_size: Number of points to upload per batch.
+            exclude_patterns: Additional glob patterns to exclude.
             on_progress: Optional callback for progress updates.
 
         Returns:
-            Summary dict with total_files, total_chunks, and failed_files.
+            Summary dict with total_files, total_chunks, failed_files, and skipped_files.
         """
         if chunker is None:
             chunker = RecursiveChunker()
 
         # Discover files first
-        files = [f for f in path.glob(pattern) if f.is_file()]
+        all_files = [f for f in path.glob(pattern) if f.is_file()]
+
+        # Apply exclusion filters
+        files, skipped = filter_files(all_files, path, exclude_patterns)
         total_files_to_process = len(files)
+
+        if skipped:
+            logger.info(f"Skipped {len(skipped)} files due to exclusion patterns")
 
         logger.info(f"Found {total_files_to_process} files matching '{pattern}'")
 
@@ -206,6 +215,7 @@ class QdrantIndexer:
             "total_files": total_files,
             "total_chunks": total_chunks,
             "failed_files": failed_files,
+            "skipped_files": len(skipped),
         }
 
     def _generate_point_id(self, file_path: Path, chunk_index: int) -> int:
