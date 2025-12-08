@@ -177,7 +177,7 @@ More content here to ensure we have enough text for chunking.
         indexer.ensure_collection()
 
         # Index all markdown files
-        result = indexer.index_directory(tmp_path, pattern="**/*.md")
+        result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
 
         assert result["total_files"] == 3  # doc1.md, doc2.md, nested.md
         assert result["total_chunks"] > 0
@@ -439,7 +439,7 @@ class TestEdgeCases:
         )
         indexer.ensure_collection()
 
-        result = indexer.index_directory(tmp_path, pattern="**/*.md")
+        result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
 
         assert result["total_files"] == 0
         assert result["total_chunks"] == 0
@@ -466,7 +466,7 @@ class TestEdgeCases:
         indexer.ensure_collection()
 
         # Should not fail on mixed content
-        result = indexer.index_directory(tmp_path, pattern="**/*")
+        result = indexer.index_directory(tmp_path, patterns=["**/*"])
 
         # Should have indexed at least the text file
         assert result["total_files"] >= 1

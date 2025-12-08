@@ -140,7 +140,7 @@ class TestIndexDirectory:
         mock_embedding.return_value = mock_embedding_instance
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
-        result = indexer.index_directory(tmp_path, pattern="**/*.md")
+        result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
 
         assert result["total_files"] == 3
         assert result["total_chunks"] >= 3
@@ -166,7 +166,7 @@ class TestIndexDirectory:
         indexer = QdrantIndexer("http://localhost:6333", "test")
 
         # Only .md files
-        result = indexer.index_directory(tmp_path, pattern="**/*.md")
+        result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
         assert result["total_files"] == 1
 
     @patch("qdrant_indexer.indexer.QdrantClient")

@@ -77,6 +77,7 @@ class PDFLoader(DocumentLoader):
                 pages_text.append(text)
 
         content = "\n\n".join(pages_text)
+        page_count = len(doc)
         doc.close()
 
         return Document(
@@ -85,7 +86,7 @@ class PDFLoader(DocumentLoader):
             metadata={
                 "filename": path.name,
                 "extension": path.suffix,
-                "page_count": len(doc),
+                "page_count": page_count,
             },
         )
 

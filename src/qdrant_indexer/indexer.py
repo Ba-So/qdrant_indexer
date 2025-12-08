@@ -156,7 +156,7 @@ class QdrantIndexer:
     def index_directory(
         self,
         path: Path,
-        pattern: str = "**/*.md",
+        patterns: list[str] | None = None,
         chunker: Chunker | None = None,
         batch_size: int = 100,
         exclude_patterns: list[str] | None = None,
@@ -166,7 +166,7 @@ class QdrantIndexer:
 
         Args:
             path: Directory path to index.
-            pattern: Glob pattern for file matching.
+            patterns: Glob patterns for file matching (defaults to common doc types).
             chunker: Chunker instance (defaults to RecursiveChunker).
             batch_size: Number of points to upload per batch.
             exclude_patterns: Additional glob patterns to exclude.
@@ -175,11 +175,20 @@ class QdrantIndexer:
         Returns:
             Summary dict with total_files, total_chunks, failed_files, and skipped_files.
         """
+        if patterns is None:
+            patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"]
+
         if chunker is None:
             chunker = RecursiveChunker()
 
         # Discover files first
-        all_files = [f for f in path.glob(pattern) if f.is_file()]
+        all_files = []
+        seen = set()
+        for pattern in patterns:
+            for f in path.glob(pattern):
+                if f.is_file() and f not in seen:
+                    all_files.append(f)
+                    seen.add(f)
 
         # Apply exclusion filters
         files, skipped = filter_files(all_files, path, exclude_patterns)
@@ -188,7 +197,8 @@ class QdrantIndexer:
         if skipped:
             logger.info(f"Skipped {len(skipped)} files due to exclusion patterns")
 
-        logger.info(f"Found {total_files_to_process} files matching '{pattern}'")
+        patterns_str = ", ".join(patterns)
+        logger.info(f"Found {total_files_to_process} files matching patterns: {patterns_str}")
 
         if on_progress:
             on_progress("discovery", total_files_to_process, total_files_to_process, f"Found {total_files_to_process} files")

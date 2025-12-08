@@ -65,7 +65,7 @@ def index(
     url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
     chunk_size: Annotated[int, typer.Option("--chunk-size", help="Chunk size in characters")] = 512,
     chunk_overlap: Annotated[int, typer.Option("--chunk-overlap", help="Overlap between chunks")] = 50,
-    pattern: Annotated[str, typer.Option("--pattern", "-p", help="Glob pattern for files")] = "**/*.md",
+    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"],
     batch_size: Annotated[int, typer.Option("--batch-size", help="Batch size for uploads")] = 100,
     exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
@@ -114,8 +114,13 @@ def index(
         chunker = RecursiveChunker(chunk_size=chunk_size, overlap=chunk_overlap)
 
         # Discover and filter files
-        all_files = list(path.glob(pattern))
-        all_files = [f for f in all_files if f.is_file()]
+        all_files = []
+        seen = set()
+        for p in pattern:
+            for f in path.glob(p):
+                if f.is_file() and f not in seen:
+                    all_files.append(f)
+                    seen.add(f)
 
         files, skipped = filter_files(
             all_files,
@@ -126,7 +131,8 @@ def index(
 
         if not files:
             if not quiet:
-                console.print(f"[yellow]No files found matching pattern '{pattern}'[/yellow]")
+                patterns_str = ", ".join(pattern)
+                console.print(f"[yellow]No files found matching patterns: {patterns_str}[/yellow]")
                 if skipped:
                     console.print(f"[dim]({len(skipped)} files excluded by patterns)[/dim]")
             return
