@@ -374,12 +374,13 @@
         "description": "Create configuration handling in src/qdrant_indexer/config.py supporting both CLI arguments and optional .qdrant-indexer.toml config file.",
         "details": "1. Define Config dataclass/Pydantic model with sections:\n   - QdrantConfig: url\n   - EmbeddingConfig: model, cache_dir\n   - ChunkingConfig: strategy, chunk_size, chunk_overlap\n   - IndexingConfig: batch_size, exclude_patterns\n2. Implement load_config() function:\n   - Search for .qdrant-indexer.toml in current dir and parents\n   - Parse TOML file if found\n   - Return default config if not found\n3. Implement merge_config() to combine file config with CLI args\n   - CLI args take precedence\n4. Add config validation\n5. Support environment variables for Qdrant URL (QDRANT_URL)",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "1"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-12-08T14:13:01.402Z"
       },
       {
         "id": "8",
@@ -578,9 +579,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T14:11:01.336Z",
+      "lastModified": "2025-12-08T14:13:01.402Z",
       "taskCount": 13,
-      "completedCount": 7,
+      "completedCount": 8,
       "tags": [
         "master"
       ]
