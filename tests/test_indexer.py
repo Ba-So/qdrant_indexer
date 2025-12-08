@@ -270,7 +270,7 @@ class TestHelperMethods:
             metadata={},
         )
 
-        assert "text" in payload
+        assert "document" in payload
         assert "source" in payload
         assert "chunk_index" in payload
         assert "total_chunks" in payload

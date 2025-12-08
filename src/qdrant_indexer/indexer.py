@@ -46,6 +46,7 @@ class QdrantIndexer:
         self.collection = collection_name
         self.embeddings = TextEmbedding(model_name=embedding_model)
         self._vector_size = 384  # all-MiniLM-L6-v2 dimension
+        self._vector_name = "fast-all-minilm-l6-v2"  # Required by qdrant-mcp
         logger.debug(f"Initialized indexer for collection '{collection_name}' at {qdrant_url}")
 
     def ensure_collection(self) -> bool:
@@ -60,10 +61,12 @@ class QdrantIndexer:
 
         self.client.create_collection(
             collection_name=self.collection,
-            vectors_config=VectorParams(
-                size=self._vector_size,
-                distance=Distance.COSINE,
-            ),
+            vectors_config={
+                self._vector_name: VectorParams(
+                    size=self._vector_size,
+                    distance=Distance.COSINE,
+                ),
+            },
         )
         logger.info(f"Created collection '{self.collection}'")
         return True
@@ -119,7 +122,7 @@ class QdrantIndexer:
             points_batch.append(
                 PointStruct(
                     id=point_id,
-                    vector=list(vector),
+                    vector={self._vector_name: list(vector)},
                     payload=payload,
                 )
             )
@@ -254,7 +257,7 @@ class QdrantIndexer:
             Payload dict with all fields.
         """
         payload = {
-            "text": chunk,
+            "document": chunk,  # Field name required by qdrant-mcp
             "source": str(file_path.absolute()),
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
