@@ -589,7 +589,7 @@
         "testStrategy": "Verify installation by running `uv sync` successfully and importing tree_sitter and tree_sitter_php in Python REPL without errors",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -597,9 +597,10 @@
             "description": "Add tree-sitter>=0.21.0 to the [project.dependencies] section of pyproject.toml for core tree-sitter parsing functionality",
             "dependencies": [],
             "details": "Edit /home/baso/dev/qdrant_indexer/pyproject.toml and add \"tree-sitter>=0.21.0\", to the dependencies array after line 14. This is the core tree-sitter library required for all language parsing functionality. Place it after the existing dependencies but before the closing bracket.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "After adding, verify the dependency is correctly formatted TOML syntax by checking the file can be parsed without errors",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:06:13.077Z"
           },
           {
             "id": 2,
@@ -609,9 +610,10 @@
               1
             ],
             "details": "Edit /home/baso/dev/qdrant_indexer/pyproject.toml and add \"tree-sitter-php>=0.22.0\", to the dependencies array immediately after the tree-sitter dependency. This provides the PHP-specific grammar for tree-sitter parsing. Ensure proper TOML array formatting with comma separation.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify TOML syntax is valid and both tree-sitter dependencies are listed in the dependencies array in pyproject.toml:7-14",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:06:13.082Z"
           },
           {
             "id": 3,
@@ -621,9 +623,10 @@
               2
             ],
             "details": "Edit /home/baso/dev/qdrant_indexer/pyproject.toml and add \"tree-sitter-python>=0.21.0\", to the dev dependencies array at pyproject.toml:17-20, after pytest-cov. This is an optional dev dependency used for testing and comparing Python parsing capabilities. Maintain the existing indentation and formatting style.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify the dev dependencies array contains all three items (pytest, pytest-cov, tree-sitter-python) with correct formatting",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:06:13.085Z"
           },
           {
             "id": 4,
@@ -633,9 +636,10 @@
               3
             ],
             "details": "Run the command 'uv sync' from the project root /home/baso/dev/qdrant_indexer to synchronize and install all dependencies including the newly added tree-sitter packages. The uv package manager is available at /nix/store/6a10dxw6aqm9xhygpbi7swhc7lppvmbq-uv-0.7.22/bin/uv. This will download and install tree-sitter, tree-sitter-php, and tree-sitter-python packages.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify uv sync completes successfully without errors and reports the tree-sitter packages as installed",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:06:13.091Z"
           },
           {
             "id": 5,
@@ -645,11 +649,13 @@
               4
             ],
             "details": "Launch a Python REPL using the project's virtual environment and attempt to import tree_sitter and tree_sitter_php modules. Execute: 'python -c \"import tree_sitter; import tree_sitter_php; print('Successfully imported tree-sitter packages')\"' from the project directory. This confirms the packages are installed correctly and accessible to Python code.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify both imports succeed without ImportError and the success message is printed, confirming tree-sitter and tree-sitter-php are properly installed and importable",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:06:13.096Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:06:13.096Z"
       },
       {
         "id": "15",
@@ -661,7 +667,7 @@
         "dependencies": [
           "14"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -669,9 +675,10 @@
             "description": "Ensure all necessary imports are present at the top of models.py for the CodeSymbol dataclass",
             "dependencies": [],
             "details": "Verify that models.py has the required imports: 'from dataclasses import dataclass, field' and 'from typing import Any'. These are already present in the file based on lines 3-5, so this subtask confirms the imports are in place before adding the new CodeSymbol class.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Visual inspection of imports section - verify dataclass, field from dataclasses and Any from typing are imported",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:33:13.462Z"
           },
           {
             "id": 2,
@@ -681,9 +688,10 @@
               1
             ],
             "details": "Insert the CodeSymbol dataclass at the end of src/qdrant_indexer/models.py (after line 53). The class should include all 12 fields with proper type annotations: name (str), qualified_name (str), symbol_type (str), content (str), docstring (str | None), signature (str | None), line_start (int), line_end (int), parent (str | None), visibility (str | None), language (str), and metadata (dict[str, Any] with default_factory). Follow the same formatting style as Document and Chunk classes.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify the class can be imported with 'from qdrant_indexer.models import CodeSymbol' and all fields are accessible",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:33:13.473Z"
           },
           {
             "id": 3,
@@ -693,9 +701,10 @@
               2
             ],
             "details": "The docstring should describe CodeSymbol as representing an extracted code symbol (function, class, method, constant) and document all 12 attributes with examples: name (e.g., 'parse_segment'), qualified_name (e.g., 'MyClass.parse_segment'), symbol_type ('function', 'class', 'method', 'constant'), content (full source code), docstring (extracted documentation), signature (e.g., '(data: bytes) -> Segment'), line_start/line_end (line numbers), parent (parent class name or None), visibility ('public', 'private', 'protected' for PHP, None for Python), language ('python' or 'php'), and metadata (additional language-specific metadata dict).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify docstring is complete by checking help(CodeSymbol) output includes all attribute descriptions",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:33:13.485Z"
           },
           {
             "id": 4,
@@ -705,9 +714,10 @@
               3
             ],
             "details": "Create new file tests/test_models.py following the testing patterns from test_loaders.py. Include test class TestCodeSymbol with test methods: test_python_function_symbol() to create a Python function CodeSymbol and verify all fields, test_php_method_symbol() to create a PHP method with visibility and parent class, test_class_symbol() to test a class type symbol, and test_metadata_default_factory() to verify metadata defaults to empty dict and is mutable per instance. Each test should instantiate CodeSymbol with realistic values matching the symbol type being tested.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest tests/test_models.py and verify all tests pass with 100% coverage of CodeSymbol instantiation",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:33:13.497Z"
           },
           {
             "id": 5,
@@ -717,11 +727,13 @@
               4
             ],
             "details": "Update src/qdrant_indexer/models.py module docstring if needed to mention CodeSymbol. Verify the model can be imported in __init__.py exports if models are re-exported at package level. Test that CodeSymbol instances can coexist with Document and Chunk instances in the same codebase without conflicts. Confirm the model follows the same dataclass patterns as existing models (uses field(default_factory=dict) for mutable defaults).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Import all models together with 'from qdrant_indexer.models import Document, Chunk, CodeSymbol' and instantiate one of each type to verify no conflicts",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:33:13.509Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:33:13.509Z"
       },
       {
         "id": "16",
@@ -733,7 +745,7 @@
         "dependencies": [
           "15"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -741,9 +753,10 @@
             "description": "Create the CodeSymbol dataclass in models.py to represent code symbols extracted from source files",
             "dependencies": [],
             "details": "Add a new @dataclass CodeSymbol to src/qdrant_indexer/models.py following the existing patterns (Document, Chunk, IndexedPoint). Include fields: name (str), kind (str) for symbol type (function/class/method), line_start (int), line_end (int), signature (str), docstring (str | None), and file_path (Path). This model will store metadata about extracted code symbols.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Add unit tests in tests/test_models.py (create if needed) to verify CodeSymbol can be instantiated with all required fields and that optional fields default correctly",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:37:13.738Z"
           },
           {
             "id": 2,
@@ -751,9 +764,10 @@
             "description": "Set up the new code_loaders package directory with placeholder files",
             "dependencies": [],
             "details": "Create directory src/qdrant_indexer/code_loaders/ with files: __init__.py (initially empty), base.py (for abstract base class), python.py (placeholder with docstring comment), and php.py (placeholder with docstring comment). Follow the flat package structure used in the project (no nested packages).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify directory exists and all files are created. Use pytest to import code_loaders package and verify no import errors",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:37:13.744Z"
           },
           {
             "id": 3,
@@ -764,9 +778,10 @@
               2
             ],
             "details": "In src/qdrant_indexer/code_loaders/base.py, implement CodeLoader(DocumentLoader) following the ABC pattern from loaders.py:13. Include abstract methods: extract_symbols(content: str, file_path: Path) -> list[CodeSymbol] and get_symbol_context(symbol: CodeSymbol) -> str. Override load(path: Path) -> Document to read file content, extract symbols, and return Document with metadata containing 'symbols', 'is_code': True, 'filename', and 'extension' keys matching the pattern in loaders.py:36-42.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Create tests/test_code_loaders.py with a minimal concrete implementation of CodeLoader. Test that load() method returns Document with correct metadata structure including 'symbols' and 'is_code' keys. Verify abstract methods raise NotImplementedError when not overridden.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:37:13.749Z"
           },
           {
             "id": 4,
@@ -776,9 +791,10 @@
               3
             ],
             "details": "In src/qdrant_indexer/code_loaders/__init__.py, add imports and __all__ list following the pattern used in the main package. Export only CodeLoader from base.py for now. Use absolute imports: 'from qdrant_indexer.code_loaders.base import CodeLoader' and '__all__ = ['CodeLoader']'.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test that 'from qdrant_indexer.code_loaders import CodeLoader' works correctly. Verify __all__ is properly defined and only exports CodeLoader. Check that the import doesn't pull in placeholder modules (python.py, php.py).",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:37:13.753Z"
           },
           {
             "id": 5,
@@ -788,11 +804,13 @@
               4
             ],
             "details": "In tests/test_code_loaders.py, add a test class TestCodeLoaderIntegration with tests that: 1) verify package structure exists (all expected files present), 2) test CodeLoader can be imported from package root, 3) create a minimal concrete implementation that overrides abstract methods, 4) test the load() method returns a Document with is_code=True and symbols list in metadata, 5) verify the Document follows same structure as other loaders (matching patterns from test_loaders.py).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest tests/test_code_loaders.py -v to verify all integration tests pass. Ensure test coverage includes package imports, abstract method enforcement, and Document metadata structure validation.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:37:13.758Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:37:13.758Z"
       },
       {
         "id": "17",
@@ -804,7 +822,7 @@
         "dependencies": [
           "16"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -812,9 +830,10 @@
             "description": "Set up the code_loaders package structure under src/qdrant_indexer/code_loaders/",
             "dependencies": [],
             "details": "Create directory src/qdrant_indexer/code_loaders/ and add an __init__.py file that will export the base CodeLoader class and PythonCodeLoader. The __init__.py should initially contain the package docstring and version info, with imports to be added in subtask 5 after the classes are implemented.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify the directory exists and __init__.py is importable with 'import qdrant_indexer.code_loaders'",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:38:15.023Z"
           },
           {
             "id": 2,
@@ -824,9 +843,10 @@
               1
             ],
             "details": "Create base.py following the pattern from loaders.py DocumentLoader. Define abstract CodeLoader class with two abstract methods: extract_symbols(content: str, file_path: Path) -> list[CodeSymbol] and get_symbol_context(symbol: CodeSymbol) -> str. Import CodeSymbol from qdrant_indexer.models. Use ABC and abstractmethod from abc module. Add comprehensive docstrings explaining the purpose of each method.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify the abstract class cannot be instantiated directly and that subclasses must implement both abstract methods",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:38:15.035Z"
           },
           {
             "id": 3,
@@ -836,9 +856,10 @@
               2
             ],
             "details": "Implement the complete PythonCodeLoader class as specified in the task details. Key components: (1) extract_symbols method with try-except for syntax errors, (2) _extract_function helper for functions/methods with signature building and decorator handling, (3) _extract_class helper for class definitions with base class extraction, (4) _extract_constant helper for module-level uppercase constants, (5) get_symbol_context method to format symbols for embedding. Handle edge cases like missing docstrings, empty files, and syntax errors gracefully with logging.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit tests covering: simple functions with/without docstrings, classes with methods, nested classes, syntax error handling, type annotations extraction, various decorator patterns, module-level constants",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:38:15.045Z"
           },
           {
             "id": 4,
@@ -848,9 +869,10 @@
               3
             ],
             "details": "Following the pattern from test_loaders.py, create test classes: (1) TestPythonCodeLoader with tests for simple functions, classes with methods, docstring extraction (Google/NumPy/Sphinx styles), type annotation handling, decorator extraction, module-level constants, and syntax error handling. (2) Create pytest fixtures for sample Python files with various code patterns. (3) Test edge cases: empty files, files with only imports, deeply nested classes, async functions, property decorators, class methods, static methods. Ensure at least 6 test methods as specified in the test strategy.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "All tests should pass with pytest, achieving >90% code coverage for python.py. Use tmp_path fixture to create sample Python files for testing.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:38:15.058Z"
           },
           {
             "id": 5,
@@ -860,11 +882,13 @@
               3
             ],
             "details": "Update src/qdrant_indexer/code_loaders/__init__.py to import and expose CodeLoader from .base and PythonCodeLoader from .python. Add __all__ list containing ['CodeLoader', 'PythonCodeLoader']. Include docstring explaining the package purpose: 'Code loaders for extracting symbols from source code files.' This follows the same pattern as the loaders package which exports its loader classes.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify imports work correctly: 'from qdrant_indexer.code_loaders import CodeLoader, PythonCodeLoader' and that both classes are accessible",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:38:15.068Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:38:15.068Z"
       },
       {
         "id": "18",
@@ -1022,7 +1046,7 @@
         "dependencies": [
           "19"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1030,9 +1054,10 @@
             "description": "Import the CodeSymbol model from qdrant_indexer.models to enable type checking and usage in code file handling methods",
             "dependencies": [],
             "details": "Add 'from qdrant_indexer.models import Document, Chunk, IndexedPoint, CodeSymbol' to the imports section at the top of src/qdrant_indexer/indexer.py (around line 13-15). This prepares the indexer to work with code symbol metadata that will be provided by code loaders. Verify that CodeSymbol exists in models.py before proceeding with implementation.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify the file imports successfully without errors by running 'python -c \"from qdrant_indexer.indexer import QdrantIndexer\"'. Check that CodeSymbol is accessible within the module.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:42:21.944Z"
           },
           {
             "id": 2,
@@ -1042,9 +1067,10 @@
               1
             ],
             "details": "In src/qdrant_indexer/indexer.py, update the index_file() method (lines 78-154) to check if doc.metadata contains 'is_code' and 'symbols' keys after loading. If both are present, call a new _index_code_file() method; otherwise, call a new _index_regular_file() method. The detection logic should be: 'if doc.metadata.get(\"is_code\") and \"symbols\" in doc.metadata:'. This creates a clean separation between code and regular document indexing flows.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test with mocked loader that returns doc.metadata={'is_code': True, 'symbols': []}. Verify _index_code_file() is called. Test with doc.metadata={} and verify _index_regular_file() is called.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:42:21.950Z"
           },
           {
             "id": 3,
@@ -1054,9 +1080,10 @@
               2
             ],
             "details": "Create a new private method _index_regular_file(self, doc: Document, chunker: Chunker, batch_size: int, on_progress: ProgressCallback | None = None) -> int in src/qdrant_indexer/indexer.py. Move the current index_file() implementation (lines 100-154) into this new method, keeping all existing functionality: chunking with doc.content, embedding generation, payload building via _build_payload(), batch uploading, and progress callbacks. This preserves the original behavior for regular documents.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run existing unit tests for index_file() against _index_regular_file() to ensure no regression. Test with markdown, text, and PDF files. Verify chunk counts, payload structure, and batch uploading work identically.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:42:21.956Z"
           },
           {
             "id": 4,
@@ -1066,9 +1093,10 @@
               3
             ],
             "details": "In src/qdrant_indexer/indexer.py, implement _index_code_file(self, doc: Document, chunker: Chunker, batch_size: int, on_progress: ProgressCallback | None = None) -> int. Extract symbols from doc.metadata['symbols']. For each symbol, create chunk text as 'f\"{symbol.symbol_type}: {symbol.qualified_name}\\n\" + (symbol.docstring or \"\")'. Generate embeddings using self.embeddings.embed(). Build payload with code-specific fields: language, symbol_type, symbol_name, symbol_qualified_name, signature, docstring, line_start, line_end, parent_class, visibility. Use PointStruct with self._vector_name for vector key. Handle batch uploading and progress callbacks identical to _index_regular_file().",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test with mocked symbols containing all CodeSymbol fields. Verify payload contains all code metadata fields (language, symbol_type, symbol_name, etc.). Test batch uploading with >100 symbols. Verify embeddings are generated for correct text format.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:42:21.961Z"
           },
           {
             "id": 5,
@@ -1078,11 +1106,13 @@
               4
             ],
             "details": "In the _index_code_file() method in src/qdrant_indexer/indexer.py, add type checking with 'from qdrant_indexer.chunkers import CodeChunker' (conditional import to avoid circular dependencies). Use 'isinstance(chunker, CodeChunker)' to detect if specialized chunker is available. If True, call 'chunker.chunk_symbols(symbols)' which should return list of (chunk_text, symbol) tuples. If False, use fallback: iterate symbols, create text as 'f\"{symbol.symbol_type}: {symbol.qualified_name}\\n{symbol.docstring or \"\"}\"', chunk with regular chunker, and pair each chunk with its symbol. This ensures compatibility with both specialized and generic chunkers.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with mock CodeChunker that has chunk_symbols() method - verify it's called. Test with RecursiveChunker - verify fallback logic executes. Test with symbol containing long docstring - verify chunker.chunk() splits it properly in fallback mode.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:42:21.968Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:42:21.968Z"
       },
       {
         "id": "21",
@@ -1096,7 +1126,7 @@
           "18",
           "20"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1104,9 +1134,10 @@
             "description": "Check that PythonCodeLoader and PHPCodeLoader classes exist in src/qdrant_indexer/code_loaders/ before attempting to import them",
             "dependencies": [],
             "details": "Before modifying loaders.py, verify that the code_loaders package and its classes exist. Check for:\n1. Directory src/qdrant_indexer/code_loaders/\n2. Files __init__.py, base.py, python.py, php.py\n3. PythonCodeLoader class in python.py\n4. PHPCodeLoader class in php.py\n5. Proper exports in __init__.py\n\nIf these don't exist, task dependencies (17, 18, 20) must be completed first. This verification prevents import errors when updating loaders.py.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run: python -c \"from qdrant_indexer.code_loaders import PythonCodeLoader, PHPCodeLoader; print('Success')\" to verify classes can be imported without errors",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:51:35.083Z"
           },
           {
             "id": 2,
@@ -1116,9 +1147,10 @@
               1
             ],
             "details": "Add the following import statement after the existing imports in src/qdrant_indexer/loaders.py (around line 10, after the Document import):\n\n```python\nfrom qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader\n```\n\nPlace this import alphabetically and group it with other internal imports. Ensure proper formatting and maintain consistency with existing import style (absolute imports from qdrant_indexer package).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run: python -m py_compile src/qdrant_indexer/loaders.py to verify syntax. Then run: python -c \"from qdrant_indexer.loaders import LOADERS\" to ensure no import errors",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:51:35.095Z"
           },
           {
             "id": 3,
@@ -1128,9 +1160,10 @@
               2
             ],
             "details": "Update the LOADERS dictionary in src/qdrant_indexer/loaders.py (currently at lines 127-134) to include Python file extensions:\n\n```python\nLOADERS: dict[str, type[DocumentLoader]] = {\n    # Existing loaders\n    \".md\": MarkdownLoader,\n    \".markdown\": MarkdownLoader,\n    \".txt\": TextLoader,\n    \".text\": TextLoader,\n    \".pdf\": PDFLoader,\n    \".rst\": ReStructuredTextLoader,\n    # Python code loaders\n    \".py\": PythonCodeLoader,\n    \".pyi\": PythonCodeLoader,  # Python stub files\n}\n```\n\nMaintain alphabetical grouping and add comment to separate code loaders from document loaders.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test: Verify get_loader(Path('test.py')) returns PythonCodeLoader instance and get_loader(Path('test.pyi')) returns PythonCodeLoader instance",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:51:35.108Z"
           },
           {
             "id": 4,
@@ -1140,9 +1173,10 @@
               3
             ],
             "details": "Extend the LOADERS dictionary in src/qdrant_indexer/loaders.py to include PHP file extensions:\n\n```python\nLOADERS: dict[str, type[DocumentLoader]] = {\n    # ... existing loaders including Python ...\n    # PHP code loaders\n    \".php\": PHPCodeLoader,\n    \".php3\": PHPCodeLoader,\n    \".php4\": PHPCodeLoader,\n    \".php5\": PHPCodeLoader,\n    \".phtml\": PHPCodeLoader,\n}\n```\n\nGroup PHP extensions together after Python extensions. This supports legacy PHP file extensions (.php3, .php4, .php5) and template files (.phtml).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Unit test: Verify get_loader(Path('test.php')) returns PHPCodeLoader, and verify all variants (.php3, .php4, .php5, .phtml) return PHPCodeLoader instances",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:51:35.122Z"
           },
           {
             "id": 5,
@@ -1152,11 +1186,13 @@
               4
             ],
             "details": "Add new test methods to TestLoaderFactory class in tests/test_loaders.py:\n\n1. test_get_loader_for_python() - verify .py returns PythonCodeLoader\n2. test_get_loader_for_python_stub() - verify .pyi returns PythonCodeLoader\n3. test_get_loader_for_php() - verify .php returns PHPCodeLoader\n4. test_get_loader_for_php_variants() - verify .php3, .php4, .php5, .phtml return PHPCodeLoader\n\nUpdate TestLoadersRegistry.test_loaders_contains_expected_extensions() to assert code extensions exist in LOADERS registry. Add integration test that creates sample .py and .php files, uses get_loader(), and verifies Document objects are returned with code-specific metadata.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run: pytest tests/test_loaders.py::TestLoaderFactory -v to verify all new test cases pass. Run: pytest tests/test_loaders.py::TestLoadersRegistry -v to verify registry tests pass",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:51:35.136Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:51:35.136Z"
       },
       {
         "id": "22",
@@ -1168,7 +1204,7 @@
         "dependencies": [
           "21"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1176,9 +1212,10 @@
             "description": "Update the index command function signature in cli.py to add code-mode, include-source, docstrings-only, and updated default pattern parameters",
             "dependencies": [],
             "details": "In src/qdrant_indexer/cli.py:68, update the pattern parameter default from [\"**/*.md\", \"**/*.txt\", \"**/*.pdf\", \"**/*.rst\"] to [\"**/*.{md,txt,pdf,rst,py,php}\"]. Add three new parameters after line 68: code_mode (bool, default True, help=\"Enable code-aware parsing\"), include_source (bool, default True, help=\"Include full source code in chunks\"), and docstrings_only (bool, default False, help=\"Only index docstrings, not code bodies\"). Use the same Annotated[bool, typer.Option(...)] pattern as existing boolean parameters like no_default_excludes and quiet.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run 'qdrant-indexer index --help' to verify new options appear in help output with correct descriptions. Verify pattern default shows updated extensions including .py and .php.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:53:43.945Z"
           },
           {
             "id": 2,
@@ -1224,11 +1261,13 @@
               4
             ],
             "details": "In src/qdrant_indexer/cli.py:75, update the command docstring to include code indexing examples:\n\n```python\n\"\"\"Index a directory into a Qdrant collection.\n\nExamples:\n    # Index documentation\n    qdrant-indexer index ./docs -c my-docs\n    \n    # Index Python codebase with default settings\n    qdrant-indexer index ./src -c my-code -p \"**/*.py\"\n    \n    # Index with docstrings only (no function bodies)\n    qdrant-indexer index ./src -c docs --docstrings-only\n    \n    # Disable code-aware parsing\n    qdrant-indexer index ./src -c raw --no-code-mode\n\"\"\"\n```\n\nThese examples demonstrate the new code indexing features and help users understand the different modes.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run 'qdrant-indexer index --help' and verify the examples appear in the command help output. Examples should be properly formatted and readable in the terminal.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:53:43.949Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:53:44.033Z"
       },
       {
         "id": "23",
@@ -1242,7 +1281,7 @@
           "18",
           "20"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1250,9 +1289,10 @@
             "description": "Create comprehensive unit tests for PythonCodeLoader class including function parsing, class/method extraction, syntax error handling, docstring extraction, and constant detection",
             "dependencies": [],
             "details": "Create tests/test_code_loaders.py with TestPythonCodeLoader class containing:\n1. test_parse_simple_function: Verify parsing of a function with docstring and type hints, check name, symbol_type='function', docstring content, and signature contains return type\n2. test_parse_class_with_methods: Test parsing of a class with multiple methods, verify 3 symbols (1 class + 2 methods), check parent relationship for methods\n3. test_handle_syntax_error: Test graceful handling when code has syntax errors, ensure empty symbols list is returned\n4. test_extract_module_docstring: Verify extraction of module-level docstrings as symbol_type='module'\n5. test_extract_constants: Test extraction of module-level constants (uppercase variable assignments) as symbol_type='constant'\nUse tmp_path fixture for creating temporary Python files. Import PythonCodeLoader from qdrant_indexer.code_loaders and CodeSymbol from qdrant_indexer.models. Follow existing test patterns from tests/test_loaders.py.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest tests/test_code_loaders.py::TestPythonCodeLoader -v to verify all 5 Python loader tests pass",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:44:14.729Z"
           },
           {
             "id": 2,
@@ -1262,9 +1302,10 @@
               1
             ],
             "details": "Add TestPHPCodeLoader class to tests/test_code_loaders.py with:\n1. test_parse_function_with_phpdoc: Verify parsing of PHP function with PHPDoc comment, check name='hello', symbol_type='function', docstring extraction\n2. test_parse_class_with_methods: Test parsing PHP class with public and private methods, verify 2 methods extracted, check visibility='public' for add_method, visibility='private' for subtract_method, parent='Calculator' for both\nUse tmp_path fixture to create temporary .php files. Import PHPCodeLoader from qdrant_indexer.code_loaders. PHP test files should start with <?php tag. Follow same testing patterns as Python tests.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest tests/test_code_loaders.py::TestPHPCodeLoader -v to verify all PHP loader tests pass",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:44:14.740Z"
           },
           {
             "id": 3,
@@ -1272,9 +1313,10 @@
             "description": "Create tests/fixtures/ directory structure with representative Python and PHP source files for integration testing",
             "dependencies": [],
             "details": "Create tests/fixtures/ directory with sample files:\n1. tests/fixtures/sample.py: Python file with a class containing methods, module docstring, constants, and various symbol types for comprehensive testing\n2. tests/fixtures/sample.php: PHP file with class, methods with different visibility modifiers, PHPDoc comments, and functions\n3. tests/fixtures/utils.py: Simple Python utility file with helper functions for integration test use\nThese fixtures will be used by integration tests to verify end-to-end indexing. Follow patterns from existing fixtures in tests/conftest.py. Files should contain realistic code examples with proper docstrings/PHPDoc.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify directory and files exist: ls -la tests/fixtures/ and check that sample files are valid Python/PHP syntax",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:44:14.750Z"
           },
           {
             "id": 4,
@@ -1284,9 +1326,10 @@
               3
             ],
             "details": "Add to tests/conftest.py:\n1. @pytest.fixture sample_python_code() -> str: Return Python code string with function and class\n2. @pytest.fixture sample_python_file(tmp_path, sample_python_code): Create temporary .py file\n3. @pytest.fixture sample_php_code() -> str: Return PHP code string with class and methods\n4. @pytest.fixture sample_php_file(tmp_path, sample_php_code): Create temporary .php file\nFollow existing fixture patterns in conftest.py (e.g., sample_markdown_content, sample_markdown_file). These fixtures will be reused across multiple test files.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Import and use fixtures in test files to verify they work: pytest tests/test_code_loaders.py -v --fixtures to list available fixtures",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:44:14.757Z"
           },
           {
             "id": 5,
@@ -1299,11 +1342,13 @@
               4
             ],
             "details": "Add to tests/test_integration.py as new test method in TestIndexerIntegration class:\n@pytest.mark.integration\ndef test_index_python_codebase(test_collection_name, qdrant_client, cleanup_collection, tmp_path):\n1. Create sample Python file with helper function containing docstring\n2. Initialize QdrantIndexer with test_collection_name and QDRANT_URL\n3. Call indexer.ensure_collection()\n4. Import CodeChunker from qdrant_indexer.chunkers (or RecursiveChunker as fallback)\n5. Call indexer.index_file() with code file and chunker\n6. Verify chunks > 0\n7. Search collection for 'helper function' using qdrant_client.search()\n8. Assert results contain symbol_type='function' in payload\nFollow existing integration test patterns from test_search_indexed_content. Test requires Qdrant running at localhost:6333.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest -m integration tests/test_integration.py::TestIndexerIntegration::test_index_python_codebase -v with Qdrant running (docker compose up -d) to verify end-to-end code indexing works and achieves >80% coverage for code_loaders package",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:44:46.681Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:44:46.681Z"
       },
       {
         "id": "24",
@@ -1316,7 +1361,7 @@
           "22",
           "23"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1324,9 +1369,10 @@
             "description": "Add Python and PHP entries to the file formats table with their extensions and code-aware features",
             "dependencies": [],
             "details": "Edit the 'Supported File Formats' table in README.md (around line 164-172). Add two new rows after the ReStructuredText entry:\n- Python: `.py`, `.pyi` | Symbol extraction (functions, classes, methods), docstring indexing, type annotations\n- PHP: `.php`, `.php3`, `.php4`, `.php5`, `.phtml` | Symbol extraction (functions, classes, methods, traits, interfaces), PHPDoc indexing\n\nUse the Edit tool to insert these rows while preserving the existing markdown table formatting.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Visual inspection: Verify the table renders correctly in GitHub's markdown preview and includes all file extensions and feature descriptions",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:59:12.887Z"
           },
           {
             "id": 2,
@@ -1336,9 +1382,10 @@
               1
             ],
             "details": "Insert a new section after 'Supported File Formats' (after line 172) with:\n1. Introduction explaining code-aware parsing vs plain text\n2. Features subsection listing symbol-level indexing, docstring extraction, metadata, signatures, and qdrant-mcp compatibility\n3. Usage Examples subsection with 5-6 bash examples covering: Python indexing, PHP indexing, mixed codebases, docstrings-only mode, and disabled code-mode\n4. Code Metadata subsection showing example JSON payload with all fields: language, symbol_type, symbol_name, symbol_qualified_name, signature, docstring, line_start, line_end, parent_class, visibility\n5. Querying Code subsection with Python client example using query filters for language and symbol_type\n\nReference the CodeSymbol model (src/qdrant_indexer/models.py:56-88) to ensure metadata fields match implementation.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Manual verification: (1) All bash commands are syntactically correct, (2) Metadata fields match CodeSymbol dataclass attributes, (3) Python query example is valid qdrant-client code, (4) Section is well-structured and flows logically",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:59:12.891Z"
           },
           {
             "id": 3,
@@ -1360,9 +1407,10 @@
               2
             ],
             "details": "Create directory structure: examples/code_indexing/\n\n1. sample.py: Create a Python file with 2-3 functions and 1 class demonstrating docstrings, type annotations, and method definitions (20-30 lines)\n2. sample.php: Create a PHP file with 1 class, 2 methods with PHPDoc comments, and 1 standalone function (20-30 lines)\n3. query_code.py: Create a Python script showing how to use qdrant_client to:\n   - Connect to Qdrant\n   - Search for Python functions\n   - Search for PHP classes\n   - Filter by symbol_type and language\n   - Display results with metadata\n\nEnsure samples are simple, well-commented, and demonstrate the features mentioned in the Code-Aware Indexing section. Reference the metadata structure from CodeSymbol model.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Manual testing: (1) Run qdrant-indexer on the sample files, (2) Verify they parse correctly without errors, (3) Execute query_code.py against indexed samples, (4) Verify query returns expected results with correct metadata",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:59:12.899Z"
           },
           {
             "id": 5,
@@ -1372,11 +1420,13 @@
               3
             ],
             "details": "In the Troubleshooting section (starting line 220), add a new subsection after 'Files not being indexed':\n\n### Code files not parsing correctly\n\nEnsure tree-sitter dependencies are installed:\n```bash\nuv sync\n```\n\nFor syntax errors in source files, the indexer will log warnings and skip the file. Check logs with `-vv` flag:\n```bash\nqdrant-indexer index ./src -c code -vv\n```\n\nIf code files are being treated as plain text, verify:\n1. File extension is recognized (.py, .php)\n2. --code-mode is not disabled\n3. Check verbose output for loader selection\n\nInclude practical troubleshooting steps referencing the tree-sitter parsing library used by code loaders (src/qdrant_indexer/code_loaders/).",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Manual review: (1) Test suggested commands work correctly, (2) Verify -vv flag actually shows parsing details, (3) Ensure uv sync installs tree-sitter dependencies, (4) Validate troubleshooting steps resolve common issues",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:59:12.906Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:59:13.051Z"
       },
       {
         "id": "25",
@@ -1388,7 +1438,7 @@
         "dependencies": [
           "23"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1396,9 +1446,10 @@
             "description": "Create tests/test_performance.py with pytest markers, helper functions, and test fixtures for generating large Python codebases",
             "dependencies": [],
             "details": "Create tests/test_performance.py with: (1) @pytest.mark.performance decorator configuration, (2) generate_python_file(num_lines) helper that creates syntactically valid Python code with functions and docstrings, (3) generate_php_file(num_lines) helper for PHP code generation, (4) Fixtures for temporary large codebases. The helper functions should generate realistic code structures with functions, classes, docstrings, and comments to accurately simulate real-world indexing performance.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest --collect-only to verify test is discovered, verify generated code is syntactically valid by parsing with ast.parse() for Python and tree-sitter for PHP",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:48:27.862Z"
           },
           {
             "id": 2,
@@ -1408,9 +1459,10 @@
               1
             ],
             "details": "In tests/test_performance.py, implement test_index_10k_loc_python(tmp_path): (1) Generate 20 Python files with 500 lines each (~10K LOC total) using generate_python_file helper, (2) Initialize QdrantIndexer with test collection, (3) Create RecursiveChunker(chunk_size=512, overlap=50) matching production settings, (4) Time the indexing with time.time(), (5) Assert elapsed < 60 seconds, (6) Assert total_chunks > 0, (7) Print performance metrics (time, chunks, LOC/sec). Use existing patterns from tests/test_indexer.py for QdrantIndexer initialization and mocking.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest -m performance -v tests/test_performance.py::test_index_10k_loc_python with Qdrant running, verify test passes and completes in <60s, verify memory usage stays reasonable",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:48:27.873Z"
           },
           {
             "id": 3,
@@ -1420,9 +1472,10 @@
               1
             ],
             "details": "In tests/test_performance.py, implement test_index_10k_loc_php(tmp_path): (1) Generate 20 PHP files with 500 lines each using generate_php_file helper, including classes, functions, methods, traits, and PHPDoc comments, (2) Initialize QdrantIndexer with test collection, (3) Use same chunker configuration as Python test, (4) Time and assert performance (<60s), (5) Print metrics. Follow same pattern as Python test but adapt for PHP file extensions (.php) and code structure.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run pytest -m performance -v tests/test_performance.py::test_index_10k_loc_php with Qdrant running, verify test passes in <60s, compare performance with Python test",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:48:27.883Z"
           },
           {
             "id": 4,
@@ -1433,9 +1486,10 @@
               3
             ],
             "details": "Create tests/profile_indexing.py script: (1) Use cProfile to profile the index_file and index_directory methods with 10K LOC, (2) Generate pstats output showing top 20 time-consuming functions, (3) Identify bottlenecks in: embedding generation (batch processing in indexer.py:114), tree-sitter parsing (code_loaders), Qdrant uploads (batch size in indexer.py:134), (4) Document findings in comments, (5) If performance doesn't meet <60s target, implement optimizations: increase batch_size parameter (currently 100), optimize symbol extraction in code_loaders, consider parallel file processing. Maintain compatibility with existing test suite.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run profiling script and verify optimizations improve performance, re-run performance tests to confirm <60s target met, run full test suite (pytest tests/) to ensure no regressions",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:48:27.895Z"
           },
           {
             "id": 5,
@@ -1447,18 +1501,20 @@
               4
             ],
             "details": "Update pyproject.toml [tool.pytest.ini_options] to add 'performance: marks tests as performance tests (may take 30-60s each)' marker. Add performance section to README.md with: (1) Performance table showing LOC/second for Python and PHP, (2) Typical indexing times for 10K LOC projects, (3) Memory usage characteristics (~500MB for embedding model), (4) Batch size recommendations, (5) Instructions for running performance tests: 'pytest -m performance'. Include actual measured results from test runs. Note: CI/CD workflow creation deferred as .github/workflows/ does not exist yet.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify pytest.ini_options.markers includes performance marker, run pytest --markers to confirm marker is registered, verify README renders correctly and includes accurate performance data from test runs",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-12-09T06:48:27.907Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-12-09T06:48:27.907Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-12-08T20:14:32.761Z",
+      "lastModified": "2025-12-09T06:59:13.053Z",
       "taskCount": 25,
-      "completedCount": 15,
+      "completedCount": 25,
       "tags": [
         "master"
       ]

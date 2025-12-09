@@ -112,3 +112,109 @@ def mock_embeddings() -> MagicMock:
     # Return 384-dimensional vectors (matching all-MiniLM-L6-v2)
     mock.embed.return_value = [[0.1] * 384]
     return mock
+
+
+@pytest.fixture
+def sample_python_code() -> str:
+    """Return sample Python code with function and class."""
+    return '''"""A sample module."""
+
+def greet(name: str) -> str:
+    """Greet a person by name.
+
+    Args:
+        name: The person's name.
+
+    Returns:
+        A greeting message.
+    """
+    return f"Hello, {name}!"
+
+
+class Greeter:
+    """A class for greeting people."""
+
+    def __init__(self, prefix: str = "Hello"):
+        """Initialize the greeter.
+
+        Args:
+            prefix: The greeting prefix.
+        """
+        self.prefix = prefix
+
+    def greet(self, name: str) -> str:
+        """Greet a person.
+
+        Args:
+            name: The person's name.
+
+        Returns:
+            A greeting message.
+        """
+        return f"{self.prefix}, {name}!"
+'''
+
+
+@pytest.fixture
+def sample_python_file(tmp_path: Path, sample_python_code: str) -> Path:
+    """Create a temporary Python file."""
+    file_path = tmp_path / "test.py"
+    file_path.write_text(sample_python_code)
+    return file_path
+
+
+@pytest.fixture
+def sample_php_code() -> str:
+    """Return sample PHP code with class and methods."""
+    return '''<?php
+/**
+ * A sample PHP file.
+ */
+
+/**
+ * Greet a person by name.
+ *
+ * @param string $name The person's name
+ * @return string A greeting message
+ */
+function greet($name) {
+    return "Hello, $name!";
+}
+
+/**
+ * A class for greeting people.
+ */
+class Greeter {
+    /**
+     * @var string Greeting prefix
+     */
+    private $prefix;
+
+    /**
+     * Initialize the greeter.
+     *
+     * @param string $prefix The greeting prefix
+     */
+    public function __construct($prefix = "Hello") {
+        $this->prefix = $prefix;
+    }
+
+    /**
+     * Greet a person.
+     *
+     * @param string $name The person's name
+     * @return string A greeting message
+     */
+    public function greet($name) {
+        return $this->prefix . ", " . $name . "!";
+    }
+}
+'''
+
+
+@pytest.fixture
+def sample_php_file(tmp_path: Path, sample_php_code: str) -> Path:
+    """Create a temporary PHP file."""
+    file_path = tmp_path / "test.php"
+    file_path.write_text(sample_php_code)
+    return file_path

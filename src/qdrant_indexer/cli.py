@@ -65,14 +65,32 @@ def index(
     url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
     chunk_size: Annotated[int, typer.Option("--chunk-size", help="Chunk size in characters")] = 512,
     chunk_overlap: Annotated[int, typer.Option("--chunk-overlap", help="Overlap between chunks")] = 50,
-    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"],
+    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"],
     batch_size: Annotated[int, typer.Option("--batch-size", help="Batch size for uploads")] = 100,
     exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
     verbose: Annotated[int, typer.Option("--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)")] = 0,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
 ) -> None:
-    """Index a directory into a Qdrant collection."""
+    """Index a directory into a Qdrant collection.
+
+    By default, indexes documentation (.md, .txt, .pdf, .rst) and code files (.py, .php).
+    Code files are parsed to extract symbols (functions, classes, methods) for better
+    semantic search.
+
+    Examples:
+        # Index documentation
+        qdrant-indexer index ./docs -c my-docs
+
+        # Index Python codebase
+        qdrant-indexer index ./src -c my-code -p "**/*.py"
+
+        # Index mixed docs and code
+        qdrant-indexer index ./project -c full-index
+
+        # Index only specific patterns
+        qdrant-indexer index ./src -c api-docs -p "**/*.md" -p "**/*.py"
+    """
     setup_logging(verbose, quiet)
 
     if not path.exists():

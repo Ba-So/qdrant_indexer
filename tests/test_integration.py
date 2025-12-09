@@ -270,6 +270,109 @@ Object-oriented programming in Python uses classes and objects.
         collection_info = qdrant_client.get_collection(test_collection_name)
         assert collection_info.points_count == count1
 
+    def test_index_python_code_file(
+        self,
+        test_collection_name: str,
+        qdrant_client: QdrantClient,
+        cleanup_collection: str,
+        tmp_path: Path,
+    ):
+        """Test indexing Python source code with symbols."""
+        # Create a Python file with functions and classes
+        code_file = tmp_path / "utils.py"
+        code_file.write_text(
+            '''"""Utility functions for testing."""
+
+def helper_function(x: int) -> int:
+    """A helper function that doubles a value.
+
+    Args:
+        x: The value to double.
+
+    Returns:
+        The doubled value.
+    """
+    return x * 2
+
+
+class Calculator:
+    """A simple calculator class."""
+
+    def add(self, a: int, b: int) -> int:
+        """Add two numbers.
+
+        Args:
+            a: First number.
+            b: Second number.
+
+        Returns:
+            The sum of a and b.
+        """
+        return a + b
+
+    def subtract(self, a: int, b: int) -> int:
+        """Subtract b from a.
+
+        Args:
+            a: First number.
+            b: Second number.
+
+        Returns:
+            The difference.
+        """
+        return a - b
+'''
+        )
+
+        # Register Python code loader
+        from qdrant_indexer.code_loaders import PythonCodeLoader
+        from qdrant_indexer.loaders import LOADERS
+        LOADERS[".py"] = PythonCodeLoader
+
+        indexer = QdrantIndexer(
+            qdrant_url=QDRANT_URL,
+            collection_name=test_collection_name,
+        )
+        indexer.ensure_collection()
+
+        chunker = RecursiveChunker()
+        chunk_count = indexer.index_file(code_file, chunker)
+
+        # Should have indexed symbols (module, function, class, 2 methods)
+        assert chunk_count >= 4
+
+        # Verify points exist
+        collection_info = qdrant_client.get_collection(test_collection_name)
+        assert collection_info.points_count == chunk_count
+
+        # Search for the function using embeddings
+        from fastembed import TextEmbedding
+
+        embedding_model = TextEmbedding(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            providers=["CPUExecutionProvider"],
+        )
+        query_vector = list(embedding_model.embed(["helper function that doubles"]))[0]
+
+        results = qdrant_client.search(
+            collection_name=test_collection_name,
+            query_vector=query_vector,
+            limit=5,
+        )
+
+        assert len(results) > 0
+
+        # Check for code-specific metadata
+        found_code_payload = False
+        for result in results:
+            if "symbol_type" in result.payload and "language" in result.payload:
+                found_code_payload = True
+                assert result.payload["language"] == "python"
+                assert result.payload["symbol_type"] in ["function", "class", "method", "module"]
+                break
+
+        assert found_code_payload, "No code-specific metadata found in results"
+
 
 class TestCLIIntegration:
     """Integration tests for CLI commands."""

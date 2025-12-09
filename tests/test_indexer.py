@@ -293,3 +293,227 @@ class TestHelperMethods:
 
         assert payload["title"] == "Test Title"
         assert payload["author"] == "Test Author"
+
+
+class TestCodeFileIndexing:
+    """Tests for code file indexing with symbols."""
+
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_index_python_file_with_symbols(
+        self, mock_embedding, mock_client, tmp_path: Path
+    ):
+        """Verify Python code file with symbols is indexed correctly."""
+        # Create a Python file
+        py_file = tmp_path / "test.py"
+        py_file.write_text('def hello():\n    """Say hello."""\n    return "hello"')
+
+        mock_client_instance = MagicMock()
+        mock_client.return_value = mock_client_instance
+
+        mock_embedding_instance = MagicMock()
+        mock_embedding_instance.embed.return_value = [[0.1] * 384]
+        mock_embedding.return_value = mock_embedding_instance
+
+        indexer = QdrantIndexer("http://localhost:6333", "test")
+        chunker = RecursiveChunker()
+
+        # Import PythonCodeLoader to register it
+        from qdrant_indexer.code_loaders import PythonCodeLoader
+        from qdrant_indexer.loaders import LOADERS
+        LOADERS[".py"] = PythonCodeLoader
+
+        result = indexer.index_file(py_file, chunker)
+
+        # Should have indexed at least one symbol
+        assert result >= 1
+        mock_client_instance.upsert.assert_called()
+
+        # Check that points were created with code metadata
+        call_args = mock_client_instance.upsert.call_args_list[0]
+        points = call_args.kwargs["points"]
+        assert len(points) > 0
+
+        # Verify payload contains code-specific fields
+        payload = points[0].payload
+        assert "language" in payload
+        assert "symbol_type" in payload
+        assert "symbol_name" in payload
+        assert payload["language"] == "python"
+
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_index_regular_file_uses_regular_indexer(
+        self, mock_embedding, mock_client, tmp_path: Path
+    ):
+        """Verify non-code file uses regular indexing path."""
+        md_file = tmp_path / "test.md"
+        md_file.write_text("# Test\nRegular markdown content.")
+
+        mock_client_instance = MagicMock()
+        mock_client.return_value = mock_client_instance
+
+        mock_embedding_instance = MagicMock()
+        mock_embedding_instance.embed.return_value = [[0.1] * 384]
+        mock_embedding.return_value = mock_embedding_instance
+
+        indexer = QdrantIndexer("http://localhost:6333", "test")
+        chunker = RecursiveChunker()
+        result = indexer.index_file(md_file, chunker)
+
+        assert result >= 1
+        mock_client_instance.upsert.assert_called()
+
+        # Check payload doesn't have code-specific fields
+        call_args = mock_client_instance.upsert.call_args_list[0]
+        points = call_args.kwargs["points"]
+        payload = points[0].payload
+
+        # Regular files shouldn't have symbol metadata
+        assert "symbol_type" not in payload or payload.get("is_code") is not True
+
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_build_code_payload_has_all_fields(
+        self, mock_embedding, mock_client, tmp_path: Path
+    ):
+        """Verify _build_code_payload includes all code-specific fields."""
+        from qdrant_indexer.models import CodeSymbol
+
+        indexer = QdrantIndexer("http://localhost:6333", "test")
+        file_path = tmp_path / "test.py"
+
+        symbol = CodeSymbol(
+            name="test_func",
+            qualified_name="test_func",
+            symbol_type="function",
+            content="def test_func(): pass",
+            docstring="Test function",
+            signature="()",
+            line_start=1,
+            line_end=1,
+            parent=None,
+            visibility=None,
+            language="python",
+        )
+
+        payload = indexer._build_code_payload(
+            chunk="function: test_func\n()\nTest function",
+            symbol=symbol,
+            file_path=file_path,
+            chunk_index=0,
+            total_chunks=1,
+            metadata={"filename": "test.py", "is_code": True},
+        )
+
+        # Verify all code-specific fields
+        assert payload["language"] == "python"
+        assert payload["symbol_type"] == "function"
+        assert payload["symbol_name"] == "test_func"
+        assert payload["symbol_qualified_name"] == "test_func"
+        assert payload["signature"] == "()"
+        assert payload["docstring"] == "Test function"
+        assert payload["line_start"] == 1
+        assert payload["line_end"] == 1
+        assert payload["parent_class"] == ""
+        assert payload["visibility"] == ""
+        assert payload["filename"] == "test.py"
+
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_build_code_payload_excludes_symbols_from_metadata(
+        self, mock_embedding, mock_client, tmp_path: Path
+    ):
+        """Verify _build_code_payload doesn't include large symbols list."""
+        from qdrant_indexer.models import CodeSymbol
+
+        indexer = QdrantIndexer("http://localhost:6333", "test")
+        file_path = tmp_path / "test.py"
+
+        symbol = CodeSymbol(
+            name="test_func",
+            qualified_name="test_func",
+            symbol_type="function",
+            content="def test_func(): pass",
+            docstring=None,
+            signature="()",
+            line_start=1,
+            line_end=1,
+            parent=None,
+            visibility=None,
+            language="python",
+        )
+
+        # Include symbols in metadata (simulating loaded document)
+        metadata = {
+            "filename": "test.py",
+            "is_code": True,
+            "symbols": [symbol, symbol, symbol],  # Large list
+        }
+
+        payload = indexer._build_code_payload(
+            chunk="function: test_func",
+            symbol=symbol,
+            file_path=file_path,
+            chunk_index=0,
+            total_chunks=1,
+            metadata=metadata,
+        )
+
+        # Verify symbols list is not in payload
+        assert "symbols" not in payload
+        # But other metadata should be included
+        assert payload["filename"] == "test.py"
+        assert payload["is_code"] is True
+
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_fallback_chunk_symbols(
+        self, mock_embedding, mock_client
+    ):
+        """Verify _fallback_chunk_symbols creates proper chunks."""
+        from qdrant_indexer.models import CodeSymbol
+
+        indexer = QdrantIndexer("http://localhost:6333", "test")
+        chunker = RecursiveChunker()
+
+        symbols = [
+            CodeSymbol(
+                name="func1",
+                qualified_name="func1",
+                symbol_type="function",
+                content="def func1(): pass",
+                docstring="First function",
+                signature="()",
+                line_start=1,
+                line_end=1,
+                parent=None,
+                visibility=None,
+                language="python",
+            ),
+            CodeSymbol(
+                name="func2",
+                qualified_name="func2",
+                symbol_type="function",
+                content="def func2(): pass",
+                docstring="Second function",
+                signature="()",
+                line_start=3,
+                line_end=3,
+                parent=None,
+                visibility=None,
+                language="python",
+            ),
+        ]
+
+        chunks_with_symbols = indexer._fallback_chunk_symbols(symbols, chunker)
+
+        # Should have at least 2 chunks (one per symbol)
+        assert len(chunks_with_symbols) >= 2
+
+        # Each item should be a tuple of (chunk_text, symbol)
+        for chunk_text, symbol in chunks_with_symbols:
+            assert isinstance(chunk_text, str)
+            assert isinstance(symbol, CodeSymbol)
+            # Chunk should contain symbol info
+            assert symbol.name in chunk_text or symbol.symbol_type in chunk_text

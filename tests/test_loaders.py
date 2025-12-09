@@ -156,6 +156,35 @@ class TestLoaderFactory:
         loader = get_loader(tmp_path / "test.MD")
         assert isinstance(loader, MarkdownLoader)
 
+    def test_get_loader_for_python(self, tmp_path: Path):
+        """Verify .py returns PythonCodeLoader."""
+        from qdrant_indexer.code_loaders import PythonCodeLoader
+
+        loader = get_loader(tmp_path / "test.py")
+        assert isinstance(loader, PythonCodeLoader)
+
+    def test_get_loader_for_python_stub(self, tmp_path: Path):
+        """Verify .pyi returns PythonCodeLoader."""
+        from qdrant_indexer.code_loaders import PythonCodeLoader
+
+        loader = get_loader(tmp_path / "test.pyi")
+        assert isinstance(loader, PythonCodeLoader)
+
+    def test_get_loader_for_php(self, tmp_path: Path):
+        """Verify .php returns PHPCodeLoader."""
+        from qdrant_indexer.code_loaders import PHPCodeLoader
+
+        loader = get_loader(tmp_path / "test.php")
+        assert isinstance(loader, PHPCodeLoader)
+
+    def test_get_loader_for_php_variants(self, tmp_path: Path):
+        """Verify PHP variant extensions return PHPCodeLoader."""
+        from qdrant_indexer.code_loaders import PHPCodeLoader
+
+        for ext in [".php3", ".php4", ".php5", ".phtml"]:
+            loader = get_loader(tmp_path / f"test{ext}")
+            assert isinstance(loader, PHPCodeLoader), f"Failed for extension {ext}"
+
 
 class TestLoadersRegistry:
     """Tests for LOADERS registry."""
@@ -168,6 +197,14 @@ class TestLoadersRegistry:
         assert ".text" in LOADERS
         assert ".pdf" in LOADERS
         assert ".rst" in LOADERS
+        # Code loaders
+        assert ".py" in LOADERS
+        assert ".pyi" in LOADERS
+        assert ".php" in LOADERS
+        assert ".php3" in LOADERS
+        assert ".php4" in LOADERS
+        assert ".php5" in LOADERS
+        assert ".phtml" in LOADERS
 
     def test_all_loaders_are_document_loaders(self):
         """Verify all registered loaders inherit from DocumentLoader."""

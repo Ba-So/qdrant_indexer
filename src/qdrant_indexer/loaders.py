@@ -123,6 +123,10 @@ class ReStructuredTextLoader(DocumentLoader):
         )
 
 
+# Import code loaders after DocumentLoader is defined to avoid circular imports
+from qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader
+
+
 # Registry mapping file extensions to loader classes
 LOADERS: dict[str, type[DocumentLoader]] = {
     ".md": MarkdownLoader,
@@ -131,6 +135,15 @@ LOADERS: dict[str, type[DocumentLoader]] = {
     ".text": TextLoader,
     ".pdf": PDFLoader,
     ".rst": ReStructuredTextLoader,
+    # Python code loaders
+    ".py": PythonCodeLoader,
+    ".pyi": PythonCodeLoader,  # Python stub files
+    # PHP code loaders
+    ".php": PHPCodeLoader,
+    ".php3": PHPCodeLoader,
+    ".php4": PHPCodeLoader,
+    ".php5": PHPCodeLoader,
+    ".phtml": PHPCodeLoader,
 }
 
 

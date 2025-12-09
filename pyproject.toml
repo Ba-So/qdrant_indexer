@@ -13,6 +13,7 @@ dependencies = [
     "python-frontmatter>=1.0.0",
     "tree-sitter>=0.24.0",
     "tree-sitter-php>=0.23.0",
+    "typing-extensions>=4.8.0,<4.13.0",
 ]
 
 [project.optional-dependencies]
@@ -35,5 +36,6 @@ packages = ["src/qdrant_indexer"]
 [tool.pytest.ini_options]
 markers = [
     "integration: marks tests as integration tests (require running Qdrant)",
+    "performance: marks tests as performance tests (may take 30-60s each)",
 ]
 testpaths = ["tests"]
