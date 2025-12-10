@@ -52,16 +52,19 @@ def get_model_info(model_name: str) -> dict:
 def model_to_vector_name(model_name: str) -> str:
     """Convert model name to a valid Qdrant vector name.
 
+    Compatible with mcp-server-qdrant's FastEmbed naming convention:
+    'fast-{model_name}' where model_name is the part after the last '/'.
+
     Args:
         model_name: FastEmbed model name (e.g., 'jinaai/jina-embeddings-v3').
 
     Returns:
-        Sanitized vector name (e.g., 'jinaai-jina-embeddings-v3').
+        Sanitized vector name (e.g., 'fast-jina-embeddings-v3').
     """
-    # Replace non-alphanumeric chars with hyphens, lowercase
-    name = re.sub(r"[^a-zA-Z0-9]+", "-", model_name.lower())
-    # Remove leading/trailing hyphens
-    return name.strip("-")
+    # Use the same naming convention as mcp-server-qdrant
+    # Extract the model name after the last '/' and prefix with 'fast-'
+    name = model_name.split("/")[-1].lower()
+    return f"fast-{name}"
 
 # Progress callback type: (event, current, total, message)
 ProgressCallback = Callable[[str, int, int, str], None]
