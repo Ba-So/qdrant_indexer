@@ -17,7 +17,8 @@ from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, P
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker
 from qdrant_indexer.filters import filter_files
 from qdrant_indexer.loaders import get_loader
-from qdrant_indexer.models import CodeSymbol
+from qdrant_indexer.models import CodeSymbol, IndexedFileState, SyncResult
+from qdrant_indexer.state import IndexState, compute_file_hash
 
 logger = logging.getLogger(__name__)
 
@@ -778,6 +779,148 @@ class QdrantIndexer:
             "failed_files": failed_files,
             "skipped_files": len(skipped),
         }
+
+    def sync_directory(
+        self,
+        path: Path,
+        patterns: list[str] | None = None,
+        chunker: Chunker | None = None,
+        batch_size: int = 100,
+        exclude_patterns: list[str] | None = None,
+        state_file: Path | None = None,
+        force: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> SyncResult:
+        """Synchronize a directory with the database.
+
+        Detects new, modified, and deleted files for incremental updates.
+
+        Args:
+            path: Directory path to synchronize.
+            patterns: Glob patterns for file matching (defaults to common doc types).
+            chunker: Chunker instance (defaults to RecursiveChunker).
+            batch_size: Number of points to upload per batch.
+            exclude_patterns: Additional glob patterns to exclude.
+            state_file: Path to state file (defaults to .qdrant-index-state.json in path).
+            force: Force re-indexing of all files even if unchanged.
+            on_progress: Optional callback for progress updates.
+
+        Returns:
+            SyncResult with counts of added, updated, deleted, unchanged, and failed files.
+        """
+        if state_file is None:
+            state_file = path / ".qdrant-index-state.json"
+
+        if chunker is None:
+            chunker = RecursiveChunker()
+
+        # Load existing state
+        state = IndexState(state_file)
+        state.load()
+
+        # Discover current files
+        if patterns is None:
+            patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"]
+
+        all_files = []
+        seen = set()
+        for pattern in patterns:
+            for f in path.glob(pattern):
+                if f.is_file() and f not in seen:
+                    all_files.append(f)
+                    seen.add(f)
+
+        # Apply exclusion filters
+        files, _ = filter_files(all_files, path, exclude_patterns)
+
+        # Detect changes
+        current_paths = {str(f.absolute()) for f in files}
+        tracked_paths = state.get_all_paths()
+
+        added = 0
+        updated = 0
+        deleted = 0
+        unchanged = 0
+        failed = []
+
+        # Process current files
+        for file_path in files:
+            abs_path = str(file_path.absolute())
+            content_hash = compute_file_hash(file_path)
+
+            file_state = state.get_file_state(file_path)
+
+            if file_state is None:
+                # New file
+                status = "new"
+            elif force or file_state.content_hash != content_hash:
+                # Modified file or forced re-index
+                status = "modified"
+            else:
+                # Unchanged
+                status = "unchanged"
+                unchanged += 1
+                continue
+
+            try:
+                if status == "modified":
+                    # Delete old chunks first
+                    self.delete_points_by_ids(file_state.chunk_ids)
+
+                # Index file
+                chunk_count, chunk_ids = self.index_file(file_path, chunker, batch_size, on_progress)
+
+                # Update state
+                new_state = IndexedFileState(
+                    path=abs_path,
+                    content_hash=content_hash,
+                    indexed_at=datetime.now().isoformat(),
+                    chunk_count=chunk_count,
+                    chunk_ids=chunk_ids,
+                )
+                state.set_file_state(file_path, new_state)
+
+                if status == "new":
+                    added += 1
+                    logger.info(f"Added new file: {file_path.name}")
+                else:
+                    updated += 1
+                    logger.info(f"Updated modified file: {file_path.name}")
+
+            except Exception as e:
+                logger.error(f"Failed to sync {file_path}: {e}")
+                failed.append(f"{file_path}: {e}")
+
+        # Handle deleted files
+        deleted_paths = tracked_paths - current_paths
+        for deleted_path in deleted_paths:
+            file_path = Path(deleted_path)
+            file_state = state.get_file_state(file_path)
+
+            if file_state:
+                try:
+                    self.delete_points_by_ids(file_state.chunk_ids)
+                    state.remove_file(file_path)
+                    deleted += 1
+                    logger.info(f"Removed deleted file: {file_path.name}")
+                except Exception as e:
+                    logger.error(f"Failed to remove deleted file {file_path}: {e}")
+                    failed.append(f"{file_path}: {e}")
+
+        # Save updated state
+        state.save()
+
+        logger.info(
+            f"Sync complete: {added} added, {updated} updated, "
+            f"{deleted} deleted, {unchanged} unchanged"
+        )
+        return SyncResult(
+            added=added,
+            updated=updated,
+            deleted=deleted,
+            unchanged=unchanged,
+            failed=failed,
+        )
 
     def _generate_point_id(self, file_path: Path, chunk_index: int) -> int:
         """Generate a stable point ID from file path and chunk index.
