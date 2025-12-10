@@ -229,19 +229,24 @@ Object-oriented programming in Python uses classes and objects.
 
         # Search for content using the same embedding model
         from fastembed import TextEmbedding
+        from qdrant_client.models import NamedVector
 
         embedding_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
         query_vector = list(embedding_model.embed(["Python programming"]))[0]
 
+        # Use named vector since the collection uses named vectors
         results = qdrant_client.search(
             collection_name=test_collection_name,
-            query_vector=query_vector,
+            query_vector=NamedVector(
+                name="fast-all-minilm-l6-v2",
+                vector=list(query_vector),
+            ),
             limit=3,
         )
 
         assert len(results) > 0
         # Should find content related to Python
-        assert any("Python" in r.payload.get("text", "") for r in results)
+        assert any("Python" in r.payload.get("document", "") for r in results)
 
     def test_idempotent_indexing(
         self,
@@ -327,11 +332,7 @@ class Calculator:
 '''
         )
 
-        # Register Python code loader
-        from qdrant_indexer.code_loaders import PythonCodeLoader
-        from qdrant_indexer.loaders import LOADERS
-        LOADERS[".py"] = PythonCodeLoader
-
+        # Python code loader is registered automatically via lazy import in get_loader()
         indexer = QdrantIndexer(
             qdrant_url=QDRANT_URL,
             collection_name=test_collection_name,
@@ -352,6 +353,7 @@ class Calculator:
 
         # Search for the function using embeddings
         from fastembed import TextEmbedding
+        from qdrant_client.models import NamedVector
 
         embedding_model = TextEmbedding(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
@@ -359,9 +361,13 @@ class Calculator:
         )
         query_vector = list(embedding_model.embed(["helper function that doubles"]))[0]
 
+        # Use named vector since the collection uses named vectors
         results = qdrant_client.search(
             collection_name=test_collection_name,
-            query_vector=query_vector,
+            query_vector=NamedVector(
+                name="fast-all-minilm-l6-v2",
+                vector=list(query_vector),
+            ),
             limit=5,
         )
 

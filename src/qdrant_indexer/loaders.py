@@ -123,11 +123,8 @@ class ReStructuredTextLoader(DocumentLoader):
         )
 
 
-# Import code loaders after DocumentLoader is defined to avoid circular imports
-from qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader
-
-
 # Registry mapping file extensions to loader classes
+# Code loaders are imported lazily in get_loader() to avoid circular imports
 LOADERS: dict[str, type[DocumentLoader]] = {
     ".md": MarkdownLoader,
     ".markdown": MarkdownLoader,
@@ -135,15 +132,17 @@ LOADERS: dict[str, type[DocumentLoader]] = {
     ".text": TextLoader,
     ".pdf": PDFLoader,
     ".rst": ReStructuredTextLoader,
-    # Python code loaders
-    ".py": PythonCodeLoader,
-    ".pyi": PythonCodeLoader,  # Python stub files
-    # PHP code loaders
-    ".php": PHPCodeLoader,
-    ".php3": PHPCodeLoader,
-    ".php4": PHPCodeLoader,
-    ".php5": PHPCodeLoader,
-    ".phtml": PHPCodeLoader,
+}
+
+# Code file extensions - loaded lazily
+CODE_EXTENSIONS: dict[str, str] = {
+    ".py": "python",
+    ".pyi": "python",
+    ".php": "php",
+    ".php3": "php",
+    ".php4": "php",
+    ".php5": "php",
+    ".phtml": "php",
 }
 
 
@@ -158,5 +157,20 @@ def get_loader(file_path: Path) -> DocumentLoader:
         Falls back to TextLoader for unknown extensions.
     """
     extension = file_path.suffix.lower()
-    loader_class = LOADERS.get(extension, TextLoader)
-    return loader_class()
+
+    # Check standard loaders first
+    if extension in LOADERS:
+        return LOADERS[extension]()
+
+    # Check code loaders (lazy import to avoid circular dependency)
+    if extension in CODE_EXTENSIONS:
+        from qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader
+
+        code_type = CODE_EXTENSIONS[extension]
+        if code_type == "python":
+            return PythonCodeLoader()
+        elif code_type == "php":
+            return PHPCodeLoader()
+
+    # Default to text loader
+    return TextLoader()

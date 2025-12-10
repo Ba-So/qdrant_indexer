@@ -12,39 +12,44 @@ from qdrant_indexer.indexer import QdrantIndexer
 class TestQdrantIndexerInit:
     """Tests for QdrantIndexer initialization."""
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_indexer_initialization(self, mock_embedding, mock_client):
+    def test_indexer_initialization(self, mock_embedding, mock_client, mock_model_info):
         """Verify QdrantClient and TextEmbedding created."""
+        mock_model_info.return_value = {"dim": 384, "model": "sentence-transformers/all-MiniLM-L6-v2"}
         indexer = QdrantIndexer(
             qdrant_url="http://localhost:6333",
             collection_name="test-collection",
         )
 
         mock_client.assert_called_once_with(url="http://localhost:6333")
-        mock_embedding.assert_called_once_with(model_name="sentence-transformers/all-MiniLM-L6-v2")
         assert indexer.collection == "test-collection"
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_indexer_custom_embedding_model(self, mock_embedding, mock_client):
+    def test_indexer_custom_embedding_model(self, mock_embedding, mock_client, mock_model_info):
         """Test with different embedding model."""
+        mock_model_info.return_value = {"dim": 768, "model": "custom-model"}
         indexer = QdrantIndexer(
             qdrant_url="http://localhost:6333",
             collection_name="test",
             embedding_model="custom-model",
         )
 
-        mock_embedding.assert_called_once_with(model_name="custom-model")
+        mock_model_info.assert_called_with("custom-model")
 
 
 class TestEnsureCollection:
     """Tests for ensure_collection method."""
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_collection_exists_not_created(self, mock_embedding, mock_client):
+    def test_collection_exists_not_created(self, mock_embedding, mock_client, mock_model_info):
         """Mock collection_exists=True, verify create not called."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         mock_client_instance = MagicMock()
         mock_client_instance.collection_exists.return_value = True
         mock_client.return_value = mock_client_instance
@@ -55,10 +60,12 @@ class TestEnsureCollection:
         assert result is False
         mock_client_instance.create_collection.assert_not_called()
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_collection_not_exists_created(self, mock_embedding, mock_client):
+    def test_collection_not_exists_created(self, mock_embedding, mock_client, mock_model_info):
         """Mock collection_exists=False, verify create_collection called."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         mock_client_instance = MagicMock()
         mock_client_instance.collection_exists.return_value = False
         mock_client.return_value = mock_client_instance
@@ -76,12 +83,14 @@ class TestEnsureCollection:
 class TestIndexFile:
     """Tests for index_file method."""
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_index_single_file_creates_points(
-        self, mock_embedding, mock_client, sample_markdown_file: Path
+        self, mock_embedding, mock_client, mock_model_info, sample_markdown_file: Path
     ):
         """Verify points generated for file."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         mock_client_instance = MagicMock()
         mock_client.return_value = mock_client_instance
 
@@ -98,18 +107,20 @@ class TestIndexFile:
         assert len(point_ids) == chunk_count
         mock_client_instance.upsert.assert_called()
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_returns_chunk_count(
-        self, mock_embedding, mock_client, sample_markdown_file: Path
+        self, mock_embedding, mock_client, mock_model_info, sample_markdown_file: Path
     ):
         """Verify index_file returns correct number of chunks."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         mock_client_instance = MagicMock()
         mock_client.return_value = mock_client_instance
 
         mock_embedding_instance = MagicMock()
-        # Return multiple embeddings for multiple chunks
-        mock_embedding_instance.embed.return_value = [[0.1] * 384, [0.2] * 384]
+        # Return embeddings matching input count
+        mock_embedding_instance.embed.side_effect = lambda texts: [[0.1] * 384 for _ in texts]
         mock_embedding.return_value = mock_embedding_instance
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
@@ -125,12 +136,14 @@ class TestIndexFile:
 class TestIndexDirectory:
     """Tests for index_directory method."""
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_index_multiple_files(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Create multiple test files, verify all processed."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         # Create test files
         (tmp_path / "doc1.md").write_text("# Doc 1\nContent one.")
         (tmp_path / "doc2.md").write_text("# Doc 2\nContent two.")
@@ -149,12 +162,14 @@ class TestIndexDirectory:
         assert result["total_files"] == 3
         assert result["total_chunks"] >= 3
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_pattern_matching(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Test glob patterns filter files correctly."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         # Create mixed files
         (tmp_path / "doc.md").write_text("Markdown")
         (tmp_path / "doc.txt").write_text("Text")
@@ -173,12 +188,14 @@ class TestIndexDirectory:
         result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
         assert result["total_files"] == 1
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_summary_statistics(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Verify returned dict has expected keys."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         (tmp_path / "test.md").write_text("# Test\nContent")
 
         mock_client_instance = MagicMock()
@@ -196,12 +213,14 @@ class TestIndexDirectory:
         assert "failed_files" in result
         assert "skipped_files" in result
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_default_chunker_used(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Verify RecursiveChunker created if None passed."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         (tmp_path / "test.md").write_text("# Test\nContent")
 
         mock_client_instance = MagicMock()
@@ -221,10 +240,12 @@ class TestIndexDirectory:
 class TestHelperMethods:
     """Tests for helper methods."""
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_generate_point_id_consistency(self, mock_embedding, mock_client, tmp_path: Path):
+    def test_generate_point_id_consistency(self, mock_embedding, mock_client, mock_model_info, tmp_path: Path):
         """Same input produces same ID."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
@@ -233,12 +254,14 @@ class TestHelperMethods:
 
         assert id1 == id2
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_generate_point_id_different_for_different_chunks(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Different chunk indices produce different IDs."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
@@ -247,10 +270,12 @@ class TestHelperMethods:
 
         assert id1 != id2
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_generate_point_id_positive(self, mock_embedding, mock_client, tmp_path: Path):
+    def test_generate_point_id_positive(self, mock_embedding, mock_client, mock_model_info, tmp_path: Path):
         """All IDs are positive int64."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
@@ -259,10 +284,12 @@ class TestHelperMethods:
             assert point_id > 0
             assert point_id < 2**63
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_build_payload_required_fields(self, mock_embedding, mock_client, tmp_path: Path):
+    def test_build_payload_required_fields(self, mock_embedding, mock_client, mock_model_info, tmp_path: Path):
         """Verify all required fields present."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
@@ -280,10 +307,12 @@ class TestHelperMethods:
         assert "total_chunks" in payload
         assert "timestamp" in payload
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
-    def test_build_payload_merges_metadata(self, mock_embedding, mock_client, tmp_path: Path):
+    def test_build_payload_merges_metadata(self, mock_embedding, mock_client, mock_model_info, tmp_path: Path):
         """Verify custom metadata included."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
@@ -302,12 +331,14 @@ class TestHelperMethods:
 class TestCodeFileIndexing:
     """Tests for code file indexing with symbols."""
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_index_python_file_with_symbols(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Verify Python code file with symbols is indexed correctly."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         # Create a Python file
         py_file = tmp_path / "test.py"
         py_file.write_text('def hello():\n    """Say hello."""\n    return "hello"')
@@ -321,11 +352,6 @@ class TestCodeFileIndexing:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker()
-
-        # Import PythonCodeLoader to register it
-        from qdrant_indexer.code_loaders import PythonCodeLoader
-        from qdrant_indexer.loaders import LOADERS
-        LOADERS[".py"] = PythonCodeLoader
 
         chunk_count, point_ids = indexer.index_file(py_file, chunker)
 
@@ -347,12 +373,14 @@ class TestCodeFileIndexing:
         assert "symbol_name" in payload
         assert payload["language"] == "python"
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_index_regular_file_uses_regular_indexer(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Verify non-code file uses regular indexing path."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         md_file = tmp_path / "test.md"
         md_file.write_text("# Test\nRegular markdown content.")
 
@@ -380,12 +408,14 @@ class TestCodeFileIndexing:
         # Regular files shouldn't have symbol metadata
         assert "symbol_type" not in payload or payload.get("is_code") is not True
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_build_code_payload_has_all_fields(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Verify _build_code_payload includes all code-specific fields."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         from qdrant_indexer.models import CodeSymbol
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
@@ -427,12 +457,14 @@ class TestCodeFileIndexing:
         assert payload["visibility"] == ""
         assert payload["filename"] == "test.py"
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_build_code_payload_excludes_symbols_from_metadata(
-        self, mock_embedding, mock_client, tmp_path: Path
+        self, mock_embedding, mock_client, mock_model_info, tmp_path: Path
     ):
         """Verify _build_code_payload doesn't include large symbols list."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         from qdrant_indexer.models import CodeSymbol
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
@@ -474,12 +506,14 @@ class TestCodeFileIndexing:
         assert payload["filename"] == "test.py"
         assert payload["is_code"] is True
 
+    @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
     @patch("qdrant_indexer.indexer.TextEmbedding")
     def test_fallback_chunk_symbols(
-        self, mock_embedding, mock_client
+        self, mock_embedding, mock_client, mock_model_info
     ):
         """Verify _fallback_chunk_symbols creates proper chunks."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
         from qdrant_indexer.models import CodeSymbol
 
         indexer = QdrantIndexer("http://localhost:6333", "test")

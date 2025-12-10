@@ -197,14 +197,15 @@ class TestLoadersRegistry:
         assert ".text" in LOADERS
         assert ".pdf" in LOADERS
         assert ".rst" in LOADERS
-        # Code loaders
-        assert ".py" in LOADERS
-        assert ".pyi" in LOADERS
-        assert ".php" in LOADERS
-        assert ".php3" in LOADERS
-        assert ".php4" in LOADERS
-        assert ".php5" in LOADERS
-        assert ".phtml" in LOADERS
+        # Code loaders are in CODE_EXTENSIONS (lazy loading to avoid circular imports)
+        from qdrant_indexer.loaders import CODE_EXTENSIONS
+        assert ".py" in CODE_EXTENSIONS
+        assert ".pyi" in CODE_EXTENSIONS
+        assert ".php" in CODE_EXTENSIONS
+        assert ".php3" in CODE_EXTENSIONS
+        assert ".php4" in CODE_EXTENSIONS
+        assert ".php5" in CODE_EXTENSIONS
+        assert ".phtml" in CODE_EXTENSIONS
 
     def test_all_loaders_are_document_loaders(self):
         """Verify all registered loaders inherit from DocumentLoader."""

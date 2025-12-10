@@ -18,7 +18,7 @@ from qdrant_indexer.chunkers import Chunker, RecursiveChunker
 from qdrant_indexer.filters import filter_files
 from qdrant_indexer.loaders import get_loader
 from qdrant_indexer.models import CodeSymbol, IndexedFileState, SyncResult
-from qdrant_indexer.state import IndexState, compute_file_hash
+from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
 
@@ -833,6 +833,10 @@ class QdrantIndexer:
         # Apply exclusion filters
         files, _ = filter_files(all_files, path, exclude_patterns)
 
+        # Report discovery complete
+        if on_progress:
+            on_progress("sync_discovery", 0, len(files), f"Found {len(files)} files")
+
         # Detect changes
         current_paths = {str(f.absolute()) for f in files}
         tracked_paths = state.get_all_paths()
@@ -842,41 +846,62 @@ class QdrantIndexer:
         deleted = 0
         unchanged = 0
         failed = []
+        files_to_process = []  # Track files that need indexing
 
-        # Process current files
-        for file_path in files:
+        # Phase 1: Check which files need processing
+        for i, file_path in enumerate(files):
+            if on_progress:
+                on_progress("sync_checking", i + 1, len(files), file_path.name)
             abs_path = str(file_path.absolute())
-            content_hash = compute_file_hash(file_path)
-
+            current_mtime = get_file_mtime(file_path)
             file_state = state.get_file_state(file_path)
 
+            # Determine if file needs processing using mtime pre-filter
             if file_state is None:
-                # New file
-                status = "new"
-            elif force or file_state.content_hash != content_hash:
-                # Modified file or forced re-index
-                status = "modified"
+                # New file - must index
+                content_hash = compute_file_hash(file_path)
+                files_to_process.append((file_path, "new", content_hash, current_mtime, None))
+            elif force:
+                # Forced re-index
+                content_hash = compute_file_hash(file_path)
+                files_to_process.append((file_path, "modified", content_hash, current_mtime, file_state))
+            elif file_state.mtime is None or current_mtime != file_state.mtime:
+                # Mtime changed or not tracked - compute hash to confirm
+                content_hash = compute_file_hash(file_path)
+                if file_state.content_hash != content_hash:
+                    files_to_process.append((file_path, "modified", content_hash, current_mtime, file_state))
+                else:
+                    # Mtime changed but content same (touched file)
+                    # Update mtime in state to avoid future false positives
+                    file_state.mtime = current_mtime
+                    state.set_file_state(file_path, file_state)
+                    unchanged += 1
             else:
-                # Unchanged
-                status = "unchanged"
+                # Mtime unchanged - skip hash computation (fast path)
                 unchanged += 1
-                continue
 
+        # Phase 2: Index files that need processing
+        for i, (file_path, status, content_hash, current_mtime, file_state) in enumerate(files_to_process):
+            if on_progress:
+                on_progress("sync_indexing", i + 1, len(files_to_process), file_path.name)
+
+            abs_path = str(file_path.absolute())
             try:
-                if status == "modified":
+                if status == "modified" and file_state:
                     # Delete old chunks first
                     self.delete_points_by_ids(file_state.chunk_ids)
 
-                # Index file
-                chunk_count, chunk_ids = self.index_file(file_path, chunker, batch_size, on_progress)
+                # Index file (don't pass on_progress to index_file to avoid confusing the sync progress)
+                chunk_count, chunk_ids = self.index_file(file_path, chunker, batch_size, None)
 
-                # Update state
+                # Update state with mtime
                 new_state = IndexedFileState(
                     path=abs_path,
                     content_hash=content_hash,
                     indexed_at=datetime.now().isoformat(),
                     chunk_count=chunk_count,
                     chunk_ids=chunk_ids,
+                    mtime=current_mtime,
                 )
                 state.set_file_state(file_path, new_state)
 
@@ -891,11 +916,14 @@ class QdrantIndexer:
                 logger.error(f"Failed to sync {file_path}: {e}")
                 failed.append(f"{file_path}: {e}")
 
-        # Handle deleted files
-        deleted_paths = tracked_paths - current_paths
-        for deleted_path in deleted_paths:
+        # Phase 3: Handle deleted files
+        deleted_paths = list(tracked_paths - current_paths)
+        for i, deleted_path in enumerate(deleted_paths):
             file_path = Path(deleted_path)
             file_state = state.get_file_state(file_path)
+
+            if on_progress and deleted_paths:
+                on_progress("sync_deleting", i + 1, len(deleted_paths), file_path.name)
 
             if file_state:
                 try:

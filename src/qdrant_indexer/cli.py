@@ -178,10 +178,24 @@ def index(
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
                 console=console,
                 disable=quiet,
             ) as progress:
-                task = progress.add_task("Synchronizing directory...", total=None)
+                task = progress.add_task("Discovering files...", total=None)
+
+                def on_sync_progress(event: str, current: int, total: int, message: str) -> None:
+                    """Handle progress updates from sync_directory."""
+                    if event == "sync_discovery":
+                        progress.update(task, description=f"Found {total} files", total=total, completed=0)
+                    elif event == "sync_checking":
+                        progress.update(task, description=f"Checking: {message}", completed=current)
+                    elif event == "sync_indexing":
+                        progress.update(task, description=f"Indexing: {message}", total=total, completed=current)
+                    elif event == "sync_deleting":
+                        progress.update(task, description=f"Removing: {message}", total=total, completed=current)
 
                 result = indexer.sync_directory(
                     path=path,
@@ -191,7 +205,7 @@ def index(
                     exclude_patterns=exclude_patterns if exclude_patterns else None,
                     state_file=state_file,
                     force=False,
-                    on_progress=None,
+                    on_progress=on_sync_progress,
                 )
 
                 progress.update(task, description="Complete")

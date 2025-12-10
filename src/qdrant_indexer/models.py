@@ -99,6 +99,7 @@ class IndexedFileState:
         indexed_at: ISO 8601 timestamp.
         chunk_count: Number of chunks created.
         chunk_ids: Point IDs in Qdrant.
+        mtime: File modification time (for fast change detection).
     """
 
     path: str
@@ -106,6 +107,7 @@ class IndexedFileState:
     indexed_at: str
     chunk_count: int
     chunk_ids: list[int]
+    mtime: float | None = None
 
 
 @dataclass

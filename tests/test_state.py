@@ -246,3 +246,34 @@ class TestComputeFileHash:
         file_hash = compute_file_hash(test_file)
         assert isinstance(file_hash, str)
         assert len(file_hash) == 64
+
+
+class TestGetFileMtime:
+    """Tests for get_file_mtime function."""
+
+    def test_get_file_mtime(self, tmp_path):
+        """Test getting file modification time."""
+        from qdrant_indexer.state import get_file_mtime
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Hello")
+
+        mtime = get_file_mtime(test_file)
+        assert isinstance(mtime, float)
+        assert mtime > 0
+
+    def test_get_file_mtime_changes_on_modify(self, tmp_path):
+        """Test that mtime changes when file is modified."""
+        import time
+        from qdrant_indexer.state import get_file_mtime
+
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Hello")
+
+        mtime1 = get_file_mtime(test_file)
+
+        time.sleep(0.1)  # Ensure time passes
+        test_file.write_text("World")
+
+        mtime2 = get_file_mtime(test_file)
+        assert mtime2 > mtime1

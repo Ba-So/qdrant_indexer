@@ -41,6 +41,7 @@ class IndexState:
                     "indexed_at": state.indexed_at,
                     "chunk_count": state.chunk_count,
                     "chunk_ids": state.chunk_ids,
+                    "mtime": state.mtime,
                 }
                 for path, state in self.files.items()
             }
@@ -101,3 +102,15 @@ def compute_file_hash(file_path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             sha256.update(chunk)
     return sha256.hexdigest()
+
+
+def get_file_mtime(file_path: Path) -> float:
+    """Get file modification time.
+
+    Args:
+        file_path: Path to the file.
+
+    Returns:
+        Modification time as a float (seconds since epoch).
+    """
+    return file_path.stat().st_mtime
