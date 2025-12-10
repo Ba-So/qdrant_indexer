@@ -198,7 +198,12 @@ def index(
                     if current == 0:
                         progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
                     else:
-                        progress.update(task, description="Embedding complete", completed=total)
+                        progress.update(task, description=f"Embedding ({current}/{total})", completed=current)
+                elif event == "preparing":
+                    if current == 0:
+                        progress.update(task, description="Preparing points...", total=total, completed=0)
+                    else:
+                        progress.update(task, description=f"Preparing ({current}/{total})", completed=current)
                 elif event == "uploading":
                     if current == 0:
                         progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)

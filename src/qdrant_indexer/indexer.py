@@ -645,15 +645,13 @@ class QdrantIndexer:
         if on_progress:
             on_progress("embedding", total_chunks, total_chunks, "Embeddings complete")
 
-        # Phase 3: Build points and upload in batches
-        logger.info(f"Uploading to Qdrant in batches of {batch_size}...")
+        # Phase 3: Build points
+        logger.info("Preparing points for upload...")
         if on_progress:
-            on_progress("uploading", 0, total_chunks, "Uploading to Qdrant...")
+            on_progress("preparing", 0, total_chunks, "Preparing points...")
 
-        points_batch: list[PointStruct] = []
-        uploaded_count = 0
-
-        for chunk, vector in zip(all_chunks, embeddings):
+        all_points: list[PointStruct] = []
+        for i, (chunk, vector) in enumerate(zip(all_chunks, embeddings)):
             point_id = self._generate_point_id(chunk.file_path, chunk.chunk_index)
 
             if chunk.symbol:
@@ -674,7 +672,7 @@ class QdrantIndexer:
                     metadata=chunk.metadata,
                 )
 
-            points_batch.append(
+            all_points.append(
                 PointStruct(
                     id=point_id,
                     vector={self._vector_name: list(vector)},
@@ -682,29 +680,34 @@ class QdrantIndexer:
                 )
             )
 
-            if len(points_batch) >= batch_size:
-                self.client.upsert(
-                    collection_name=self.collection,
-                    points=points_batch,
-                )
-                uploaded_count += len(points_batch)
-                points_batch = []
+            # Update progress every 100 points
+            if on_progress and (i + 1) % 100 == 0:
+                on_progress("preparing", i + 1, total_chunks, f"Preparing {i + 1}/{total_chunks} points...")
 
-                if on_progress:
-                    on_progress(
-                        "uploading",
-                        uploaded_count,
-                        total_chunks,
-                        f"Uploaded {uploaded_count}/{total_chunks}",
-                    )
+        if on_progress:
+            on_progress("preparing", total_chunks, total_chunks, "Points prepared")
 
-        # Upload remaining points
-        if points_batch:
+        # Phase 4: Upload in batches
+        logger.info(f"Uploading to Qdrant in batches of {batch_size}...")
+        if on_progress:
+            on_progress("uploading", 0, total_chunks, "Uploading to Qdrant...")
+
+        uploaded_count = 0
+        for i in range(0, len(all_points), batch_size):
+            points_batch = all_points[i : i + batch_size]
             self.client.upsert(
                 collection_name=self.collection,
                 points=points_batch,
             )
             uploaded_count += len(points_batch)
+
+            if on_progress:
+                on_progress(
+                    "uploading",
+                    uploaded_count,
+                    total_chunks,
+                    f"Uploaded {uploaded_count}/{total_chunks}",
+                )
 
         if on_progress:
             on_progress("uploading", total_chunks, total_chunks, "Upload complete")
