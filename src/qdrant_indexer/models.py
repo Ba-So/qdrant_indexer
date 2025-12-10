@@ -1,6 +1,7 @@
 """Data models for Qdrant Indexer."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -86,3 +87,41 @@ class CodeSymbol:
     visibility: str | None
     language: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class IndexedFileState:
+    """Tracks the state of an indexed file.
+
+    Attributes:
+        path: Absolute path to file.
+        content_hash: SHA-256 of file content.
+        indexed_at: ISO 8601 timestamp.
+        chunk_count: Number of chunks created.
+        chunk_ids: Point IDs in Qdrant.
+    """
+
+    path: str
+    content_hash: str
+    indexed_at: str
+    chunk_count: int
+    chunk_ids: list[int]
+
+
+@dataclass
+class SyncResult:
+    """Result of a directory synchronization operation.
+
+    Attributes:
+        added: New files indexed.
+        updated: Modified files re-indexed.
+        deleted: Deleted files removed from DB.
+        unchanged: Files skipped (no changes).
+        failed: Files that failed to process.
+    """
+
+    added: int
+    updated: int
+    deleted: int
+    unchanged: int
+    failed: list[str] = field(default_factory=list)
