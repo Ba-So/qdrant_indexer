@@ -1510,133 +1510,144 @@
         "updatedAt": "2025-12-09T06:48:27.907Z"
       },
       {
-        "id": 26,
+        "id": "26",
         "title": "Add state tracking models to models.py",
         "description": "Define IndexedFileState and SyncResult dataclasses for tracking indexed files and sync operations",
         "details": "Add two new dataclasses to src/qdrant_indexer/models.py:\n\n```python\nfrom datetime import datetime\n\n@dataclass\nclass IndexedFileState:\n    \"\"\"Tracks the state of an indexed file.\"\"\"\n    path: str                    # Absolute path to file\n    content_hash: str            # SHA-256 of file content\n    indexed_at: str              # ISO 8601 timestamp\n    chunk_count: int             # Number of chunks created\n    chunk_ids: list[int]         # Point IDs in Qdrant\n\n@dataclass\nclass SyncResult:\n    \"\"\"Result of a directory synchronization operation.\"\"\"\n    added: int                   # New files indexed\n    updated: int                 # Modified files re-indexed\n    deleted: int                 # Deleted files removed from DB\n    unchanged: int               # Files skipped (no changes)\n    failed: list[str]            # Files that failed to process\n```\n\nThese models will be used by the state manager and sync logic to track file changes and report results.",
         "testStrategy": "Unit test: Create instances of both dataclasses, verify all fields are accessible, test serialization to dict for JSON storage. Verify datetime strings are ISO 8601 format.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:17:52.000Z"
       },
       {
-        "id": 27,
+        "id": "27",
         "title": "Implement state.py module for index state management",
         "description": "Create state.py module with IndexState class for persistent file state tracking using JSON",
         "details": "Create src/qdrant_indexer/state.py with IndexState class:\n\n```python\nimport hashlib\nimport json\nfrom pathlib import Path\nfrom typing import Set\nfrom qdrant_indexer.models import IndexedFileState\n\nclass IndexState:\n    \"\"\"Manages persistent index state for incremental updates.\"\"\"\n    \n    def __init__(self, state_file: Path):\n        self.state_file = state_file\n        self.files: dict[str, IndexedFileState] = {}\n    \n    def load(self) -> None:\n        \"\"\"Load state from JSON file.\"\"\"\n        if not self.state_file.exists():\n            return\n        with open(self.state_file, 'r') as f:\n            data = json.load(f)\n            self.files = {\n                path: IndexedFileState(**state_data)\n                for path, state_data in data.get('files', {}).items()\n            }\n    \n    def save(self) -> None:\n        \"\"\"Persist state to JSON file.\"\"\"\n        self.state_file.parent.mkdir(parents=True, exist_ok=True)\n        data = {\n            'files': {\n                path: {\n                    'path': state.path,\n                    'content_hash': state.content_hash,\n                    'indexed_at': state.indexed_at,\n                    'chunk_count': state.chunk_count,\n                    'chunk_ids': state.chunk_ids,\n                }\n                for path, state in self.files.items()\n            }\n        }\n        with open(self.state_file, 'w') as f:\n            json.dump(data, f, indent=2)\n    \n    def get_file_state(self, path: Path) -> IndexedFileState | None:\n        \"\"\"Get state for a file.\"\"\"\n        return self.files.get(str(path.absolute()))\n    \n    def set_file_state(self, path: Path, state: IndexedFileState) -> None:\n        \"\"\"Update state for a file.\"\"\"\n        self.files[str(path.absolute())] = state\n    \n    def remove_file(self, path: Path) -> None:\n        \"\"\"Remove a file from state.\"\"\"\n        abs_path = str(path.absolute())\n        if abs_path in self.files:\n            del self.files[abs_path]\n    \n    def get_all_paths(self) -> set[str]:\n        \"\"\"Get all tracked file paths.\"\"\"\n        return set(self.files.keys())\n\ndef compute_file_hash(file_path: Path) -> str:\n    \"\"\"Compute SHA-256 hash of file content.\"\"\"\n    sha256 = hashlib.sha256()\n    with open(file_path, 'rb') as f:\n        for chunk in iter(lambda: f.read(8192), b''):\n            sha256.update(chunk)\n    return sha256.hexdigest()\n```",
         "testStrategy": "Unit tests: Test load/save with empty and populated state, verify JSON format, test get/set/remove operations, test compute_file_hash with known content, test handling of missing state file, verify parent directory creation on save.",
         "priority": "high",
         "dependencies": [
-          26
+          "26"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:27:17.232Z"
       },
       {
-        "id": 28,
+        "id": "28",
         "title": "Add deletion methods to QdrantIndexer",
         "description": "Implement methods to delete chunks from Qdrant by file path or point IDs",
         "details": "Add deletion methods to src/qdrant_indexer/indexer.py:\n\n```python\nfrom qdrant_client.models import Filter, FieldCondition, MatchValue\n\ndef delete_file_chunks(self, file_path: Path) -> int:\n    \"\"\"Delete all chunks for a file from the database.\n    \n    Uses filter query on source field to find and delete points.\n    Returns number of points deleted.\n    \"\"\"\n    source = str(file_path.absolute())\n    \n    # Query to count points before deletion\n    result = self.client.scroll(\n        collection_name=self.collection,\n        scroll_filter=Filter(\n            must=[\n                FieldCondition(\n                    key=\"source\",\n                    match=MatchValue(value=source)\n                )\n            ]\n        ),\n        limit=10000,  # Reasonable limit\n        with_payload=False,\n        with_vectors=False,\n    )\n    \n    point_ids = [point.id for point in result[0]]\n    \n    if point_ids:\n        self.client.delete(\n            collection_name=self.collection,\n            points_selector=point_ids,\n        )\n        logger.info(f\"Deleted {len(point_ids)} chunks for {file_path.name}\")\n    \n    return len(point_ids)\n\ndef delete_points_by_ids(self, point_ids: list[int]) -> None:\n    \"\"\"Delete specific points by their IDs.\"\"\"\n    if not point_ids:\n        return\n    \n    self.client.delete(\n        collection_name=self.collection,\n        points_selector=point_ids,\n    )\n    logger.debug(f\"Deleted {len(point_ids)} points\")\n```\n\nImport necessary types at top of file.",
         "testStrategy": "Integration tests with real Qdrant: Index a file, delete chunks by file path, verify count returned, verify points removed from collection. Test delete_points_by_ids with known IDs. Test with non-existent file (should return 0). Mock tests for unit testing without Qdrant.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:20:34.443Z"
       },
       {
-        "id": 29,
+        "id": "29",
         "title": "Modify index_file to return chunk IDs",
         "description": "Update index_file methods to return list of generated point IDs for state tracking",
         "details": "Modify src/qdrant_indexer/indexer.py to track and return point IDs:\n\n1. Change return type of `index_file()` from `int` to `tuple[int, list[int]]` (chunk_count, chunk_ids)\n\n2. Update `_index_regular_file()` and `_index_code_file()` to:\n   - Collect point IDs as they are generated\n   - Return `(total_chunks, point_ids)` instead of just `total_chunks`\n\n```python\ndef index_file(\n    self,\n    file_path: Path,\n    chunker: Chunker,\n    batch_size: int = 100,\n    on_progress: ProgressCallback | None = None,\n) -> tuple[int, list[int]]:\n    \"\"\"Index a single file into Qdrant.\n    \n    Returns:\n        Tuple of (chunk_count, list of point IDs)\n    \"\"\"\n    # ... existing code ...\n    if doc.metadata.get(\"is_code\") and \"symbols\" in doc.metadata:\n        return self._index_code_file(doc, file_path, chunker, batch_size, on_progress)\n    else:\n        return self._index_regular_file(doc, file_path, chunker, batch_size, on_progress)\n\ndef _index_regular_file(...) -> tuple[int, list[int]]:\n    # ... existing code ...\n    point_ids = []  # Track IDs\n    \n    for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):\n        point_id = self._generate_point_id(file_path, i)\n        point_ids.append(point_id)  # Collect ID\n        # ... rest of code ...\n    \n    return total_chunks, point_ids\n```\n\n3. Update `_index_code_file()` similarly\n\n4. Update callers in `index_directory()` and CLI to handle tuple return",
         "testStrategy": "Unit tests: Verify return type is tuple, verify point IDs match expected values from _generate_point_id, verify length of IDs list equals chunk count. Integration test: Index file, verify returned IDs exist in Qdrant collection.",
         "priority": "high",
         "dependencies": [
-          28
+          "28"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:32:40.002Z"
       },
       {
-        "id": 30,
+        "id": "30",
         "title": "Implement sync_directory method with incremental logic",
         "description": "Add sync_directory method to QdrantIndexer for detecting file changes and updating database incrementally",
         "details": "Add sync_directory method to src/qdrant_indexer/indexer.py:\n\n```python\nfrom datetime import datetime\nfrom qdrant_indexer.state import IndexState, compute_file_hash\nfrom qdrant_indexer.models import IndexedFileState, SyncResult\n\ndef sync_directory(\n    self,\n    path: Path,\n    patterns: list[str] | None = None,\n    chunker: Chunker | None = None,\n    batch_size: int = 100,\n    exclude_patterns: list[str] | None = None,\n    state_file: Path | None = None,\n    force: bool = False,\n    on_progress: ProgressCallback | None = None,\n) -> SyncResult:\n    \"\"\"Synchronize a directory with the database.\n    \n    Detects new, modified, and deleted files for incremental updates.\n    \"\"\"\n    if state_file is None:\n        state_file = path / '.qdrant-index-state.json'\n    \n    if chunker is None:\n        chunker = RecursiveChunker()\n    \n    # Load existing state\n    state = IndexState(state_file)\n    state.load()\n    \n    # Discover current files\n    if patterns is None:\n        patterns = [\"**/*.md\", \"**/*.txt\", \"**/*.pdf\", \"**/*.rst\", \"**/*.py\", \"**/*.php\"]\n    \n    all_files = []\n    seen = set()\n    for pattern in patterns:\n        for f in path.glob(pattern):\n            if f.is_file() and f not in seen:\n                all_files.append(f)\n                seen.add(f)\n    \n    # Apply exclusion filters\n    files, _ = filter_files(all_files, path, exclude_patterns)\n    \n    # Detect changes\n    current_paths = {str(f.absolute()) for f in files}\n    tracked_paths = state.get_all_paths()\n    \n    added = 0\n    updated = 0\n    deleted = 0\n    unchanged = 0\n    failed = []\n    \n    # Process current files\n    for file_path in files:\n        abs_path = str(file_path.absolute())\n        content_hash = compute_file_hash(file_path)\n        \n        file_state = state.get_file_state(file_path)\n        \n        if file_state is None:\n            # New file\n            status = 'new'\n        elif force or file_state.content_hash != content_hash:\n            # Modified file or forced re-index\n            status = 'modified'\n        else:\n            # Unchanged\n            status = 'unchanged'\n            unchanged += 1\n            continue\n        \n        try:\n            if status == 'modified':\n                # Delete old chunks first\n                self.delete_points_by_ids(file_state.chunk_ids)\n            \n            # Index file\n            chunk_count, chunk_ids = self.index_file(file_path, chunker, batch_size, on_progress)\n            \n            # Update state\n            new_state = IndexedFileState(\n                path=abs_path,\n                content_hash=content_hash,\n                indexed_at=datetime.now().isoformat(),\n                chunk_count=chunk_count,\n                chunk_ids=chunk_ids,\n            )\n            state.set_file_state(file_path, new_state)\n            \n            if status == 'new':\n                added += 1\n            else:\n                updated += 1\n        \n        except Exception as e:\n            logger.error(f\"Failed to sync {file_path}: {e}\")\n            failed.append(f\"{file_path}: {e}\")\n    \n    # Handle deleted files\n    deleted_paths = tracked_paths - current_paths\n    for deleted_path in deleted_paths:\n        file_path = Path(deleted_path)\n        file_state = state.get_file_state(file_path)\n        \n        if file_state:\n            try:\n                self.delete_points_by_ids(file_state.chunk_ids)\n                state.remove_file(file_path)\n                deleted += 1\n                logger.info(f\"Removed deleted file: {file_path.name}\")\n            except Exception as e:\n                logger.error(f\"Failed to remove deleted file {file_path}: {e}\")\n                failed.append(f\"{file_path}: {e}\")\n    \n    # Save updated state\n    state.save()\n    \n    return SyncResult(\n        added=added,\n        updated=updated,\n        deleted=deleted,\n        unchanged=unchanged,\n        failed=failed,\n    )\n```",
         "testStrategy": "Integration tests: 1) Index directory, modify file, sync - verify old chunks deleted and new added. 2) Index directory, add new file, sync - verify only new file indexed. 3) Index directory, delete file, sync - verify chunks removed. 4) Test force flag re-indexes all files. 5) Test state file created and updated correctly. Unit tests with mocked filesystem and Qdrant.",
         "priority": "high",
         "dependencies": [
-          26,
-          27,
-          29
+          "26",
+          "27",
+          "29"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:46:08.230Z"
       },
       {
-        "id": 31,
+        "id": "31",
         "title": "Update index CLI command with incremental flag",
         "description": "Modify index command to support --incremental flag and use sync_directory for incremental updates",
         "details": "Update src/qdrant_indexer/cli.py index command:\n\n1. Add new CLI parameters:\n```python\n@app.command()\ndef index(\n    # ... existing parameters ...\n    incremental: Annotated[bool, typer.Option(\n        \"--incremental/--full\",\n        help=\"Incremental update (skip unchanged) vs full re-index\"\n    )] = True,\n    state_file: Annotated[Optional[Path], typer.Option(\n        \"--state-file\",\n        help=\"Custom state file location\"\n    )] = None,\n    clean: Annotated[bool, typer.Option(\n        \"--clean\",\n        help=\"Remove entries for deleted files\"\n    )] = True,\n) -> None:\n```\n\n2. Use sync_directory when incremental=True:\n```python\nif incremental:\n    result = indexer.sync_directory(\n        path=path,\n        patterns=pattern,\n        chunker=chunker,\n        batch_size=batch_size,\n        exclude_patterns=exclude,\n        state_file=state_file,\n        force=False,\n        on_progress=None,  # Use progress bar differently\n    )\n    \n    # Display sync-specific summary\n    summary.add_row(\"Files added:\", f\"[green]{result.added}[/green]\")\n    summary.add_row(\"Files updated:\", f\"[yellow]{result.updated}[/yellow]\")\n    summary.add_row(\"Files deleted:\", f\"[red]{result.deleted}[/red]\")\n    summary.add_row(\"Files unchanged:\", f\"[dim]{result.unchanged}[/dim]\")\nelse:\n    # Use existing index_directory for full re-index\n    result = indexer.index_directory(...)\n```\n\n3. Update progress reporting to work with sync operations\n\n4. Update help text and examples in docstring",
         "testStrategy": "Manual CLI testing: 1) Run with --incremental (default), verify state file created. 2) Modify file and re-run, verify only changed file processed. 3) Run with --full, verify all files re-indexed. 4) Test --state-file custom location. Integration tests using subprocess to call CLI.",
         "priority": "medium",
         "dependencies": [
-          30
+          "30"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:53:01.290Z"
       },
       {
-        "id": 32,
+        "id": "32",
         "title": "Implement status CLI command",
         "description": "Add new status command to show indexing state and pending changes",
         "details": "Add status command to src/qdrant_indexer/cli.py:\n\n```python\n@app.command()\ndef status(\n    path: Annotated[Path, typer.Argument(help=\"Directory to check status for\")],\n    state_file: Annotated[Optional[Path], typer.Option(\n        \"--state-file\",\n        help=\"Custom state file location\"\n    )] = None,\n    pattern: Annotated[list[str], typer.Option(\n        \"--pattern\", \"-p\",\n        help=\"Glob patterns for files\"\n    )] = [\"**/*.md\", \"**/*.txt\", \"**/*.pdf\", \"**/*.rst\", \"**/*.py\", \"**/*.php\"],\n    exclude: Annotated[Optional[list[str]], typer.Option(\n        \"--exclude\", \"-e\",\n        help=\"Patterns to exclude\"\n    )] = None,\n    no_default_excludes: Annotated[bool, typer.Option(\n        \"--no-default-excludes\"\n    )] = False,\n) -> None:\n    \"\"\"Show indexing status for a directory.\n    \n    Displays:\n    - Total indexed files\n    - Files pending update (modified)\n    - Files pending addition (new)\n    - Files pending deletion (removed from disk)\n    - Last index timestamp\n    \"\"\"\n    if not path.exists() or not path.is_dir():\n        display_error(f\"Path does not exist or is not a directory: {path}\")\n        raise typer.Exit(1)\n    \n    if state_file is None:\n        state_file = path / '.qdrant-index-state.json'\n    \n    if not state_file.exists():\n        console.print(f\"[yellow]No state file found at {state_file}[/yellow]\")\n        console.print(\"Run 'qdrant-indexer index' with --incremental to create state.\")\n        raise typer.Exit(0)\n    \n    # Load state\n    from qdrant_indexer.state import IndexState, compute_file_hash\n    state = IndexState(state_file)\n    state.load()\n    \n    # Discover current files\n    all_files = []\n    seen = set()\n    for p in pattern:\n        for f in path.glob(p):\n            if f.is_file() and f not in seen:\n                all_files.append(f)\n                seen.add(f)\n    \n    from qdrant_indexer.filters import filter_files\n    files, _ = filter_files(\n        all_files, path, exclude,\n        use_defaults=not no_default_excludes\n    )\n    \n    # Analyze status\n    current_paths = {str(f.absolute()) for f in files}\n    tracked_paths = state.get_all_paths()\n    \n    new_files = []\n    modified_files = []\n    unchanged_files = []\n    deleted_files = list(tracked_paths - current_paths)\n    \n    for file_path in files:\n        file_state = state.get_file_state(file_path)\n        \n        if file_state is None:\n            new_files.append(file_path)\n        else:\n            content_hash = compute_file_hash(file_path)\n            if file_state.content_hash != content_hash:\n                modified_files.append(file_path)\n            else:\n                unchanged_files.append(file_path)\n    \n    # Display results\n    table = Table(title=\"Indexing Status\")\n    table.add_column(\"Category\", style=\"cyan\")\n    table.add_column(\"Count\", justify=\"right\")\n    \n    table.add_row(\"Indexed (up to date)\", f\"[green]{len(unchanged_files)}[/green]\")\n    table.add_row(\"Pending addition\", f\"[yellow]{len(new_files)}[/yellow]\")\n    table.add_row(\"Pending update\", f\"[yellow]{len(modified_files)}[/yellow]\")\n    table.add_row(\"Pending deletion\", f\"[red]{len(deleted_files)}[/red]\")\n    table.add_row(\"Total tracked\", str(len(tracked_paths)))\n    \n    console.print(table)\n    \n    # Show most recent index time\n    if state.files:\n        latest_time = max(s.indexed_at for s in state.files.values())\n        console.print(f\"\\nLast indexed: [cyan]{latest_time}[/cyan]\")\n    \n    # Show pending files if verbose\n    if new_files:\n        console.print(\"\\n[yellow]New files (first 5):[/yellow]\")\n        for f in new_files[:5]:\n            console.print(f\"  • {f.relative_to(path)}\")\n        if len(new_files) > 5:\n            console.print(f\"  ... and {len(new_files) - 5} more\")\n    \n    if modified_files:\n        console.print(\"\\n[yellow]Modified files (first 5):[/yellow]\")\n        for f in modified_files[:5]:\n            console.print(f\"  • {f.relative_to(path)}\")\n        if len(modified_files) > 5:\n            console.print(f\"  ... and {len(modified_files) - 5} more\")\n```",
         "testStrategy": "Manual CLI testing: 1) Run status on un-indexed directory. 2) Index directory, run status - verify all files shown as up-to-date. 3) Modify a file, run status - verify shown as pending update. 4) Add new file, run status - verify shown as pending addition. 5) Delete file, run status - verify shown as pending deletion.",
         "priority": "medium",
         "dependencies": [
-          27
+          "27"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2025-12-10T12:58:31.206Z"
       },
       {
-        "id": 33,
+        "id": "33",
         "title": "Implement clean CLI command",
         "description": "Add new clean command to remove entries from database",
         "details": "Add clean command to src/qdrant_indexer/cli.py:\n\n```python\n@app.command()\ndef clean(\n    path: Annotated[Path, typer.Argument(help=\"Directory to clean\")],\n    collection: Annotated[str, typer.Option(\n        \"--collection\", \"-c\",\n        help=\"Collection name\"\n    )],\n    url: Annotated[str, typer.Option(\n        \"--url\", \"-u\",\n        help=\"Qdrant server URL\"\n    )] = \"http://localhost:6333\",\n    state_file: Annotated[Optional[Path], typer.Option(\n        \"--state-file\",\n        help=\"Custom state file location\"\n    )] = None,\n    deleted_only: Annotated[bool, typer.Option(\n        \"--deleted-only\",\n        help=\"Only remove entries for deleted files\"\n    )] = False,\n    all: Annotated[bool, typer.Option(\n        \"--all\",\n        help=\"Remove all entries for this path (reset)\"\n    )] = False,\n    yes: Annotated[bool, typer.Option(\n        \"--yes\", \"-y\",\n        help=\"Skip confirmation\"\n    )] = False,\n    quiet: Annotated[bool, typer.Option(\n        \"--quiet\", \"-q\"\n    )] = False,\n) -> None:\n    \"\"\"Clean database entries for a directory.\n    \n    Options:\n    - Default: Remove entries for deleted files\n    - --deleted-only: Only remove deleted files\n    - --all: Remove ALL entries and reset state (full cleanup)\n    \"\"\"\n    global _quiet\n    _quiet = quiet\n    \n    if not path.exists() or not path.is_dir():\n        display_error(f\"Path does not exist or is not a directory: {path}\")\n        raise typer.Exit(1)\n    \n    if state_file is None:\n        state_file = path / '.qdrant-index-state.json'\n    \n    if not state_file.exists():\n        display_error(f\"No state file found at {state_file}\")\n        raise typer.Exit(1)\n    \n    from qdrant_indexer.state import IndexState\n    from qdrant_indexer.indexer import QdrantIndexer\n    \n    state = IndexState(state_file)\n    state.load()\n    \n    indexer = QdrantIndexer(url, collection)\n    \n    if all:\n        # Remove ALL entries\n        if not yes:\n            typer.confirm(\n                f\"This will remove ALL {len(state.files)} entries from '{collection}'. Continue?\",\n                abort=True\n            )\n        \n        total_deleted = 0\n        for file_path_str, file_state in state.files.items():\n            try:\n                indexer.delete_points_by_ids(file_state.chunk_ids)\n                total_deleted += len(file_state.chunk_ids)\n            except Exception as e:\n                console.print(f\"[red]Error removing {file_path_str}: {e}[/red]\")\n        \n        # Remove state file\n        state_file.unlink()\n        \n        display_success(f\"Removed {total_deleted} points and deleted state file\")\n    \n    else:\n        # Remove only deleted files\n        deleted_files = []\n        for file_path_str in state.get_all_paths():\n            if not Path(file_path_str).exists():\n                deleted_files.append(file_path_str)\n        \n        if not deleted_files:\n            if not quiet:\n                console.print(\"[green]No deleted files to clean[/green]\")\n            return\n        \n        if not yes:\n            typer.confirm(\n                f\"Remove {len(deleted_files)} deleted file entries from '{collection}'?\",\n                abort=True\n            )\n        \n        total_deleted = 0\n        for file_path_str in deleted_files:\n            file_state = state.files.get(file_path_str)\n            if file_state:\n                try:\n                    indexer.delete_points_by_ids(file_state.chunk_ids)\n                    state.remove_file(Path(file_path_str))\n                    total_deleted += len(file_state.chunk_ids)\n                except Exception as e:\n                    console.print(f\"[red]Error removing {file_path_str}: {e}[/red]\")\n        \n        state.save()\n        display_success(f\"Removed {total_deleted} points from {len(deleted_files)} deleted files\")\n```",
         "testStrategy": "Manual CLI testing: 1) Index directory, delete a file, run 'clean' - verify chunks removed. 2) Test --all flag removes all entries and state file. 3) Test --deleted-only on directory with no deletions. 4) Test confirmation prompts. 5) Test -y flag skips confirmation. Integration tests with real Qdrant instance.",
         "priority": "low",
         "dependencies": [
-          27,
-          28
+          "27",
+          "28"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 34,
+        "id": "34",
         "title": "Add comprehensive tests for incremental indexing",
         "description": "Create unit and integration tests for all new incremental indexing functionality",
         "details": "Create tests/test_state.py for state management:\n```python\nimport pytest\nfrom pathlib import Path\nfrom qdrant_indexer.state import IndexState, compute_file_hash\nfrom qdrant_indexer.models import IndexedFileState\n\ndef test_compute_file_hash(tmp_path):\n    # Test hash computation\n    file = tmp_path / \"test.txt\"\n    file.write_text(\"test content\")\n    hash1 = compute_file_hash(file)\n    hash2 = compute_file_hash(file)\n    assert hash1 == hash2\n    \n    file.write_text(\"different\")\n    hash3 = compute_file_hash(file)\n    assert hash3 != hash1\n\ndef test_index_state_load_save(tmp_path):\n    # Test state persistence\n    state_file = tmp_path / \"state.json\"\n    state = IndexState(state_file)\n    \n    file_state = IndexedFileState(\n        path=\"/test/file.txt\",\n        content_hash=\"abc123\",\n        indexed_at=\"2025-01-01T00:00:00\",\n        chunk_count=5,\n        chunk_ids=[1, 2, 3, 4, 5]\n    )\n    \n    state.set_file_state(Path(\"/test/file.txt\"), file_state)\n    state.save()\n    \n    # Load in new instance\n    state2 = IndexState(state_file)\n    state2.load()\n    \n    loaded = state2.get_file_state(Path(\"/test/file.txt\"))\n    assert loaded.content_hash == \"abc123\"\n    assert loaded.chunk_count == 5\n    assert loaded.chunk_ids == [1, 2, 3, 4, 5]\n```\n\nCreate tests/test_incremental.py for integration tests:\n```python\nimport pytest\nfrom pathlib import Path\nfrom qdrant_indexer.indexer import QdrantIndexer\nfrom qdrant_indexer.chunkers import RecursiveChunker\n\n@pytest.mark.integration\ndef test_sync_directory_new_file(tmp_path, qdrant_url):\n    # Create test file\n    (tmp_path / \"doc.md\").write_text(\"# Test\")\n    \n    indexer = QdrantIndexer(qdrant_url, \"test-sync\")\n    indexer.ensure_collection()\n    \n    # First sync\n    result = indexer.sync_directory(tmp_path)\n    assert result.added == 1\n    assert result.updated == 0\n    assert result.deleted == 0\n    \n    # Second sync (no changes)\n    result = indexer.sync_directory(tmp_path)\n    assert result.unchanged == 1\n    assert result.added == 0\n\n@pytest.mark.integration\ndef test_sync_directory_modified_file(tmp_path, qdrant_url):\n    doc = tmp_path / \"doc.md\"\n    doc.write_text(\"# Original\")\n    \n    indexer = QdrantIndexer(qdrant_url, \"test-sync\")\n    indexer.ensure_collection()\n    \n    # First sync\n    result = indexer.sync_directory(tmp_path)\n    assert result.added == 1\n    \n    # Modify file\n    doc.write_text(\"# Modified with more content\")\n    \n    # Second sync\n    result = indexer.sync_directory(tmp_path)\n    assert result.updated == 1\n    assert result.added == 0\n\n@pytest.mark.integration\ndef test_sync_directory_deleted_file(tmp_path, qdrant_url):\n    doc = tmp_path / \"doc.md\"\n    doc.write_text(\"# Test\")\n    \n    indexer = QdrantIndexer(qdrant_url, \"test-sync\")\n    indexer.ensure_collection()\n    \n    # First sync\n    result = indexer.sync_directory(tmp_path)\n    assert result.added == 1\n    \n    # Delete file\n    doc.unlink()\n    \n    # Second sync\n    result = indexer.sync_directory(tmp_path)\n    assert result.deleted == 1\n```\n\nAdd tests for deletion methods:\n```python\n@pytest.mark.integration\ndef test_delete_file_chunks(tmp_path, qdrant_url):\n    doc = tmp_path / \"doc.md\"\n    doc.write_text(\"# Test document\")\n    \n    indexer = QdrantIndexer(qdrant_url, \"test-delete\")\n    indexer.ensure_collection()\n    \n    chunker = RecursiveChunker()\n    chunk_count, chunk_ids = indexer.index_file(doc, chunker)\n    assert chunk_count > 0\n    \n    # Delete chunks\n    deleted = indexer.delete_file_chunks(doc)\n    assert deleted == chunk_count\n    \n    # Verify deleted\n    deleted2 = indexer.delete_file_chunks(doc)\n    assert deleted2 == 0\n```",
         "testStrategy": "Run full test suite: 'pytest tests/' for all tests, 'pytest -m integration' for integration tests requiring Qdrant, 'pytest -m \"not integration\"' for unit tests only. Verify all tests pass before considering task complete. Aim for >85% code coverage on new modules.",
         "priority": "medium",
         "dependencies": [
-          26,
-          27,
-          28,
-          29,
-          30,
-          31,
-          32,
-          33
+          "26",
+          "27",
+          "28",
+          "29",
+          "30",
+          "31",
+          "32",
+          "33"
         ],
         "status": "pending",
         "subtasks": []
       }
     ],
     "metadata": {
-      "created": "2025-12-10T07:40:02.858Z",
-      "updated": "2025-12-10T07:40:02.858Z",
-      "description": "Tasks for master context"
+      "version": "1.0.0",
+      "lastModified": "2025-12-10T12:58:31.207Z",
+      "taskCount": 34,
+      "completedCount": 32,
+      "tags": [
+        "master"
+      ]
     }
   }
 }

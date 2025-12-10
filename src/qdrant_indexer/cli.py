@@ -301,6 +301,119 @@ def index(
         raise typer.Exit(1)
 
 
+@app.command()
+def status(
+    path: Annotated[Path, typer.Argument(help="Directory to check status for")],
+    state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location")] = None,
+    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"],
+    exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude")] = None,
+    no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes")] = False,
+) -> None:
+    """Show indexing status for a directory.
+
+    Displays:
+    - Total indexed files
+    - Files pending update (modified)
+    - Files pending addition (new)
+    - Files pending deletion (removed from disk)
+    - Last index timestamp
+
+    Examples:
+        # Check status of indexed directory
+        qdrant-indexer status ./docs
+
+        # Check status with custom state file
+        qdrant-indexer status ./docs --state-file ./my-state.json
+    """
+    if not path.exists() or not path.is_dir():
+        display_error(f"Path does not exist or is not a directory: {path}")
+        raise typer.Exit(1)
+
+    if state_file is None:
+        state_file = path / ".qdrant-index-state.json"
+
+    if not state_file.exists():
+        console.print(f"[yellow]No state file found at {state_file}[/yellow]")
+        console.print("Run 'qdrant-indexer index' with --incremental to create state.")
+        raise typer.Exit(0)
+
+    # Load state
+    from qdrant_indexer.state import IndexState, compute_file_hash
+
+    state = IndexState(state_file)
+    state.load()
+
+    # Discover current files
+    all_files = []
+    seen = set()
+    for p in pattern:
+        for f in path.glob(p):
+            if f.is_file() and f not in seen:
+                all_files.append(f)
+                seen.add(f)
+
+    # Build exclude patterns list
+    exclude_patterns = list(exclude) if exclude else []
+    if not no_default_excludes:
+        exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
+
+    files, _ = filter_files(all_files, path, exclude_patterns if exclude_patterns else None, use_defaults=False)
+
+    # Analyze status
+    current_paths = {str(f.absolute()) for f in files}
+    tracked_paths = state.get_all_paths()
+
+    new_files = []
+    modified_files = []
+    unchanged_files = []
+    deleted_files = list(tracked_paths - current_paths)
+
+    for file_path in files:
+        file_state = state.get_file_state(file_path)
+
+        if file_state is None:
+            new_files.append(file_path)
+        else:
+            content_hash = compute_file_hash(file_path)
+            if file_state.content_hash != content_hash:
+                modified_files.append(file_path)
+            else:
+                unchanged_files.append(file_path)
+
+    # Display results
+    table = Table(title="Indexing Status")
+    table.add_column("Category", style="cyan")
+    table.add_column("Count", justify="right")
+
+    table.add_row("Indexed (up to date)", f"[green]{len(unchanged_files)}[/green]")
+    table.add_row("Pending addition", f"[yellow]{len(new_files)}[/yellow]")
+    table.add_row("Pending update", f"[yellow]{len(modified_files)}[/yellow]")
+    table.add_row("Pending deletion", f"[red]{len(deleted_files)}[/red]")
+    table.add_row("Total tracked", str(len(tracked_paths)))
+
+    console.print(table)
+
+    # Show most recent index time
+    if state.files:
+        latest_time = max(s.indexed_at for s in state.files.values())
+        console.print(f"\nLast indexed: [cyan]{latest_time}[/cyan]")
+
+    # Show pending files if any
+    if new_files:
+        console.print("\n[yellow]New files (first 5):[/yellow]")
+        for f in new_files[:5]:
+            console.print(f"  • {f.relative_to(path)}")
+        if len(new_files) > 5:
+            console.print(f"  ... and {len(new_files) - 5} more")
+
+    if modified_files:
+        console.print("\n[yellow]Modified files (first 5):[/yellow]")
+        for f in modified_files[:5]:
+            console.print(f"  • {f.relative_to(path)}")
+        if len(modified_files) > 5:
+            console.print(f"  ... and {len(modified_files) - 5} more")
+
+
 @app.command("list-collections")
 def list_collections(
     url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
