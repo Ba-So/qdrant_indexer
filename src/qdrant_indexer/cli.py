@@ -414,6 +414,134 @@ def status(
             console.print(f"  ... and {len(modified_files) - 5} more")
 
 
+@app.command()
+def clean(
+    path: Annotated[Path, typer.Argument(help="Directory to clean")],
+    collection: Annotated[str, typer.Option("--collection", "-c", help="Collection name")],
+    url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
+    state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location")] = None,
+    all: Annotated[bool, typer.Option("--all", help="Remove all entries for this path (reset)")] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
+) -> None:
+    """Clean database entries for a directory.
+
+    By default, removes entries for deleted files (files tracked in state but no longer on disk).
+    Use --all to remove ALL entries and reset the state file completely.
+
+    Examples:
+        # Remove entries for deleted files
+        qdrant-indexer clean ./docs -c my-docs
+
+        # Remove all entries and reset (complete cleanup)
+        qdrant-indexer clean ./docs -c my-docs --all
+
+        # Skip confirmation prompt
+        qdrant-indexer clean ./docs -c my-docs -y
+    """
+    global _quiet
+    _quiet = quiet
+
+    if not path.exists() or not path.is_dir():
+        display_error(f"Path does not exist or is not a directory: {path}")
+        raise typer.Exit(1)
+
+    if state_file is None:
+        state_file = path / ".qdrant-index-state.json"
+
+    if not state_file.exists():
+        display_error(f"No state file found at {state_file}")
+        raise typer.Exit(1)
+
+    from qdrant_indexer.state import IndexState
+
+    state = IndexState(state_file)
+    state.load()
+
+    indexer = QdrantIndexer(url, collection)
+
+    try:
+        if all:
+            # Remove ALL entries
+            total_files = len(state.files)
+            if total_files == 0:
+                if not quiet:
+                    console.print("[yellow]No entries to remove[/yellow]")
+                return
+
+            if not yes:
+                typer.confirm(
+                    f"This will remove ALL {total_files} file entries from '{collection}'. Continue?",
+                    abort=True,
+                )
+
+            total_deleted = 0
+            failed = []
+            for file_path_str, file_state in state.files.items():
+                try:
+                    indexer.delete_points_by_ids(file_state.chunk_ids)
+                    total_deleted += len(file_state.chunk_ids)
+                except Exception as e:
+                    failed.append(f"{file_path_str}: {e}")
+                    if not quiet:
+                        console.print(f"[red]Error removing {Path(file_path_str).name}: {e}[/red]")
+
+            # Remove state file
+            state_file.unlink()
+
+            if not quiet:
+                if failed:
+                    console.print(f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]")
+                display_success(f"Removed {total_deleted} points and deleted state file")
+
+        else:
+            # Remove only deleted files
+            deleted_files = []
+            for file_path_str in state.get_all_paths():
+                if not Path(file_path_str).exists():
+                    deleted_files.append(file_path_str)
+
+            if not deleted_files:
+                if not quiet:
+                    console.print("[green]No deleted files to clean[/green]")
+                return
+
+            if not yes:
+                typer.confirm(
+                    f"Remove {len(deleted_files)} deleted file entries from '{collection}'?",
+                    abort=True,
+                )
+
+            total_deleted = 0
+            failed = []
+            for file_path_str in deleted_files:
+                file_state = state.files.get(file_path_str)
+                if file_state:
+                    try:
+                        indexer.delete_points_by_ids(file_state.chunk_ids)
+                        state.remove_file(Path(file_path_str))
+                        total_deleted += len(file_state.chunk_ids)
+                    except Exception as e:
+                        failed.append(f"{file_path_str}: {e}")
+                        if not quiet:
+                            console.print(f"[red]Error removing {Path(file_path_str).name}: {e}[/red]")
+
+            state.save()
+
+            if not quiet:
+                if failed:
+                    console.print(f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]")
+                display_success(f"Removed {total_deleted} points from {len(deleted_files)} deleted files")
+
+    except typer.Abort:
+        if not quiet:
+            console.print("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(0)
+    except Exception as e:
+        display_error(str(e))
+        raise typer.Exit(1)
+
+
 @app.command("list-collections")
 def list_collections(
     url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
