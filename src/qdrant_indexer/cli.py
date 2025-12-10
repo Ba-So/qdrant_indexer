@@ -79,18 +79,26 @@ def index(
     workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel workers for file loading")] = DEFAULT_WORKERS,
     gpu: Annotated[bool, typer.Option("--gpu", "--cuda", help="Enable GPU/CUDA acceleration for embeddings")] = False,
     embedding_batch_size: Annotated[int, typer.Option("--embedding-batch-size", help="Chunks to embed at once (lower = less GPU memory)")] = DEFAULT_EMBEDDING_BATCH_SIZE,
+    incremental: Annotated[bool, typer.Option("--incremental/--full", help="Incremental update (skip unchanged) vs full re-index")] = True,
+    state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location (default: .qdrant-index-state.json in directory)")] = None,
     verbose: Annotated[int, typer.Option("--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)")] = 0,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
 ) -> None:
     """Index a directory into a Qdrant collection.
+
+    By default, uses incremental indexing: only new and modified files are processed,
+    and deleted files are removed from the database. Use --full to re-index everything.
 
     By default, indexes documentation (.md, .txt, .pdf, .rst) and code files (.py, .php).
     Code files are parsed to extract symbols (functions, classes, methods) for better
     semantic search.
 
     Examples:
-        # Index documentation
+        # Incremental index (default - only process changes)
         qdrant-indexer index ./docs -c my-docs
+
+        # Full re-index (process all files)
+        qdrant-indexer index ./docs -c my-docs --full
 
         # Index with GPU acceleration (requires CUDA build)
         qdrant-indexer index ./docs -c my-docs --gpu
@@ -104,8 +112,8 @@ def index(
         # Index code with Jina v3 (multilingual + code support)
         qdrant-indexer index ./src -c my-code -m jinaai/jina-embeddings-v3
 
-        # Index mixed docs and code with GPU
-        qdrant-indexer index ./project -c full-index --gpu
+        # Custom state file location
+        qdrant-indexer index ./docs -c my-docs --state-file ./my-state.json
     """
     setup_logging(verbose, quiet)
 
@@ -161,68 +169,89 @@ def index(
         if not no_default_excludes:
             exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
 
-        if not quiet:
-            console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
+        if incremental:
+            # Incremental mode: use sync_directory
+            if not quiet:
+                mode_msg = "[cyan]incremental[/cyan]" if not state_file else f"[cyan]incremental[/cyan] (state: {state_file})"
+                console.print(f"Mode: {mode_msg}")
 
-        # Progress tracking state
-        progress_state = {
-            "phase": "discovery",
-            "current": 0,
-            "total": 0,
-            "message": "",
-        }
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+                disable=quiet,
+            ) as progress:
+                task = progress.add_task("Synchronizing directory...", total=None)
 
-        # Progress bar with phases
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            TimeElapsedColumn(),
-            console=console,
-            disable=quiet,
-        ) as progress:
-            task = progress.add_task("Discovering files...", total=None)
+                result = indexer.sync_directory(
+                    path=path,
+                    patterns=pattern,
+                    chunker=chunker,
+                    batch_size=batch_size,
+                    exclude_patterns=exclude_patterns if exclude_patterns else None,
+                    state_file=state_file,
+                    force=False,
+                    on_progress=None,
+                )
 
-            def on_progress(event: str, current: int, total: int, message: str) -> None:
-                """Handle progress updates from indexer."""
-                if event == "discovery":
-                    progress.update(task, description=f"Found {total} files", total=total, completed=0)
-                elif event == "loading":
-                    progress.update(task, description="Loading files...", total=total, completed=current)
-                elif event == "file_loaded":
-                    progress.update(task, description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}", completed=current)
-                elif event == "file_error":
-                    progress.update(task, completed=current)
-                elif event == "embedding":
-                    if current == 0:
-                        progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
-                    else:
-                        progress.update(task, description=f"Embedding ({current}/{total})", completed=current)
-                elif event == "preparing":
-                    if current == 0:
-                        progress.update(task, description="Preparing points...", total=total, completed=0)
-                    else:
-                        progress.update(task, description=f"Preparing ({current}/{total})", completed=current)
-                elif event == "uploading":
-                    if current == 0:
-                        progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)
-                    else:
-                        progress.update(task, description=f"Uploading ({current}/{total})", completed=current)
+                progress.update(task, description="Complete")
+        else:
+            # Full mode: use index_directory
+            if not quiet:
+                console.print(f"Mode: [cyan]full re-index[/cyan]")
+                console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
 
-            # Run parallel indexing
-            result = indexer.index_directory(
-                path=path,
-                patterns=pattern,
-                chunker=chunker,
-                batch_size=batch_size,
-                exclude_patterns=exclude_patterns if exclude_patterns else None,
-                on_progress=on_progress,
-                workers=workers,
-                embedding_batch_size=embedding_batch_size,
-            )
+            # Progress bar with phases
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                disable=quiet,
+            ) as progress:
+                task = progress.add_task("Discovering files...", total=None)
 
-            progress.update(task, description="Complete", completed=result["total_chunks"])
+                def on_progress(event: str, current: int, total: int, message: str) -> None:
+                    """Handle progress updates from indexer."""
+                    if event == "discovery":
+                        progress.update(task, description=f"Found {total} files", total=total, completed=0)
+                    elif event == "loading":
+                        progress.update(task, description="Loading files...", total=total, completed=current)
+                    elif event == "file_loaded":
+                        progress.update(task, description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}", completed=current)
+                    elif event == "file_error":
+                        progress.update(task, completed=current)
+                    elif event == "embedding":
+                        if current == 0:
+                            progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
+                        else:
+                            progress.update(task, description=f"Embedding ({current}/{total})", completed=current)
+                    elif event == "preparing":
+                        if current == 0:
+                            progress.update(task, description="Preparing points...", total=total, completed=0)
+                        else:
+                            progress.update(task, description=f"Preparing ({current}/{total})", completed=current)
+                    elif event == "uploading":
+                        if current == 0:
+                            progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)
+                        else:
+                            progress.update(task, description=f"Uploading ({current}/{total})", completed=current)
+
+                # Run parallel indexing
+                result = indexer.index_directory(
+                    path=path,
+                    patterns=pattern,
+                    chunker=chunker,
+                    batch_size=batch_size,
+                    exclude_patterns=exclude_patterns if exclude_patterns else None,
+                    on_progress=on_progress,
+                    workers=workers,
+                    embedding_batch_size=embedding_batch_size,
+                )
+
+                progress.update(task, description="Complete", completed=result["total_chunks"])
 
         elapsed = time.time() - start_time
 
@@ -231,22 +260,38 @@ def index(
             summary = Table.grid(padding=(0, 2))
             summary.add_column()
             summary.add_column()
-            summary.add_row("Files indexed:", f"[cyan]{result['total_files']}[/cyan]")
-            summary.add_row("Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]")
-            if result["skipped_files"]:
-                summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
-            summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
+
+            if incremental:
+                # Display sync-specific summary
+                summary.add_row("Files added:", f"[green]{result.added}[/green]")
+                summary.add_row("Files updated:", f"[yellow]{result.updated}[/yellow]")
+                summary.add_row("Files deleted:", f"[red]{result.deleted}[/red]")
+                summary.add_row("Files unchanged:", f"[dim]{result.unchanged}[/dim]")
+                if result.failed:
+                    summary.add_row("Files failed:", f"[red]{len(result.failed)}[/red]")
+            else:
+                # Display full index summary
+                summary.add_row("Files indexed:", f"[cyan]{result['total_files']}[/cyan]")
+                summary.add_row("Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]")
+                if result["skipped_files"]:
+                    summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
+                summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
+                if result["failed_files"]:
+                    summary.add_row("Failed files:", f"[red]{len(result['failed_files'])}[/red]")
+
             if gpu:
                 gpu_status = "[green]Yes[/green]" if indexer.use_cuda and is_cuda_available() else "[yellow]No (fallback)[/yellow]"
                 summary.add_row("GPU:", gpu_status)
             summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
 
-            if result["failed_files"]:
-                summary.add_row("Failed files:", f"[red]{len(result['failed_files'])}[/red]")
-
             console.print(Panel(summary, title="Indexing Complete", border_style="green"))
 
-            if result["failed_files"]:
+            # Display failed files
+            if incremental and result.failed:
+                console.print("\n[yellow]Failed files:[/yellow]")
+                for failed in result.failed:
+                    console.print(f"  [red]•[/red] {failed}")
+            elif not incremental and result["failed_files"]:
                 console.print("\n[yellow]Failed files:[/yellow]")
                 for failed in result["failed_files"]:
                     console.print(f"  [red]•[/red] {failed}")
