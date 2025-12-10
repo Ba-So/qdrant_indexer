@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -16,6 +17,48 @@ from qdrant_indexer.loaders import get_loader
 from qdrant_indexer.models import CodeSymbol
 
 logger = logging.getLogger(__name__)
+
+# Default embedding model
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def get_model_info(model_name: str) -> dict:
+    """Get model information from FastEmbed.
+
+    Args:
+        model_name: FastEmbed model name.
+
+    Returns:
+        Dict with 'dim' (vector dimension) and 'model' (canonical name).
+
+    Raises:
+        ValueError: If model is not supported by FastEmbed.
+    """
+    supported = TextEmbedding.list_supported_models()
+    for model in supported:
+        if model["model"] == model_name:
+            return model
+    # List available models in error message
+    available = [m["model"] for m in supported]
+    raise ValueError(
+        f"Unsupported embedding model: {model_name}\n"
+        f"Available models: {', '.join(available[:10])}..."
+    )
+
+
+def model_to_vector_name(model_name: str) -> str:
+    """Convert model name to a valid Qdrant vector name.
+
+    Args:
+        model_name: FastEmbed model name (e.g., 'jinaai/jina-embeddings-v3').
+
+    Returns:
+        Sanitized vector name (e.g., 'jinaai-jina-embeddings-v3').
+    """
+    # Replace non-alphanumeric chars with hyphens, lowercase
+    name = re.sub(r"[^a-zA-Z0-9]+", "-", model_name.lower())
+    # Remove leading/trailing hyphens
+    return name.strip("-")
 
 # Progress callback type: (event, current, total, message)
 ProgressCallback = Callable[[str, int, int, str], None]
@@ -34,7 +77,7 @@ class QdrantIndexer:
         self,
         qdrant_url: str,
         collection_name: str,
-        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+        embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ):
         """Initialize the indexer.
 
@@ -45,14 +88,23 @@ class QdrantIndexer:
         """
         self.client = QdrantClient(url=qdrant_url)
         self.collection = collection_name
+        self.embedding_model = embedding_model
+
+        # Get model info for vector dimensions
+        model_info = get_model_info(embedding_model)
+        self._vector_size = model_info["dim"]
+        self._vector_name = model_to_vector_name(embedding_model)
+
         # Explicitly use CPU provider to avoid GPU initialization warnings
         self.embeddings = TextEmbedding(
             model_name=embedding_model,
             providers=["CPUExecutionProvider"],
         )
-        self._vector_size = 384  # all-MiniLM-L6-v2 dimension
-        self._vector_name = "fast-all-minilm-l6-v2"  # Required by qdrant-mcp
-        logger.debug(f"Initialized indexer for collection '{collection_name}' at {qdrant_url}")
+
+        logger.debug(
+            f"Initialized indexer for collection '{collection_name}' at {qdrant_url} "
+            f"with model '{embedding_model}' (dim={self._vector_size})"
+        )
 
     def ensure_collection(self) -> bool:
         """Ensure the collection exists, creating it if necessary.

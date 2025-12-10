@@ -15,7 +15,7 @@ from rich.table import Table
 
 from qdrant_indexer.chunkers import RecursiveChunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
-from qdrant_indexer.indexer import QdrantIndexer
+from qdrant_indexer.indexer import DEFAULT_EMBEDDING_MODEL, QdrantIndexer
 
 app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collections")
 console = Console()
@@ -63,6 +63,7 @@ def index(
     path: Annotated[Path, typer.Argument(help="Directory to index")],
     collection: Annotated[str, typer.Option("--collection", "-c", help="Collection name")],
     url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
+    embedding_model: Annotated[str, typer.Option("--embedding-model", "-m", help="FastEmbed model for embeddings")] = DEFAULT_EMBEDDING_MODEL,
     chunk_size: Annotated[int, typer.Option("--chunk-size", help="Chunk size in characters")] = 512,
     chunk_overlap: Annotated[int, typer.Option("--chunk-overlap", help="Overlap between chunks")] = 50,
     pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"],
@@ -85,11 +86,14 @@ def index(
         # Index Python codebase
         qdrant-indexer index ./src -c my-code -p "**/*.py"
 
+        # Index with a different embedding model (e.g., for German docs)
+        qdrant-indexer index ./docs -c german-docs -m jinaai/jina-embeddings-v2-base-de
+
+        # Index code with Jina v3 (multilingual + code support)
+        qdrant-indexer index ./src -c my-code -m jinaai/jina-embeddings-v3
+
         # Index mixed docs and code
         qdrant-indexer index ./project -c full-index
-
-        # Index only specific patterns
-        qdrant-indexer index ./src -c api-docs -p "**/*.md" -p "**/*.py"
     """
     setup_logging(verbose, quiet)
 
@@ -111,11 +115,12 @@ def index(
             console=console,
             disable=quiet,
         ) as progress:
-            init_task = progress.add_task("Loading embedding model...", total=None)
+            init_task = progress.add_task(f"Loading embedding model ({embedding_model})...", total=None)
 
             indexer = QdrantIndexer(
                 qdrant_url=url,
                 collection_name=collection,
+                embedding_model=embedding_model,
             )
 
             progress.update(init_task, description="Connecting to Qdrant...")
@@ -258,8 +263,14 @@ def list_collections(
             info = client.get_collection(col.name)
             vector_size = "-"
             if info.config.params.vectors:
-                if hasattr(info.config.params.vectors, "size"):
-                    vector_size = str(info.config.params.vectors.size)
+                vectors = info.config.params.vectors
+                if hasattr(vectors, "size"):
+                    # Unnamed vector config
+                    vector_size = str(vectors.size)
+                elif isinstance(vectors, dict):
+                    # Named vectors - get sizes from all vector configs
+                    sizes = [str(v.size) for v in vectors.values() if hasattr(v, "size")]
+                    vector_size = ", ".join(sizes) if sizes else "-"
 
             table.add_row(
                 col.name,
@@ -317,6 +328,56 @@ def show_excludes() -> None:
     for pattern in DEFAULT_EXCLUDE_PATTERNS:
         console.print(f"  • {pattern}")
     console.print("\n[dim]Use --no-default-excludes to disable these.[/dim]")
+
+
+@app.command("list-models")
+def list_models(
+    search: Annotated[Optional[str], typer.Argument(help="Filter models by name (e.g., 'jina', 'multilingual')")] = None,
+) -> None:
+    """List available FastEmbed embedding models.
+
+    Examples:
+        # List all models
+        qdrant-indexer list-models
+
+        # Find Jina models
+        qdrant-indexer list-models jina
+
+        # Find multilingual models
+        qdrant-indexer list-models multilingual
+    """
+    from fastembed import TextEmbedding
+
+    models = TextEmbedding.list_supported_models()
+
+    # Filter if search term provided
+    if search:
+        search_lower = search.lower()
+        models = [m for m in models if search_lower in m["model"].lower()]
+
+    if not models:
+        console.print(f"[yellow]No models found matching '{search}'[/yellow]")
+        return
+
+    table = Table(title="FastEmbed Embedding Models")
+    table.add_column("Model", style="cyan")
+    table.add_column("Dimensions", justify="right")
+    table.add_column("Description", style="dim")
+
+    for model in sorted(models, key=lambda m: m["model"]):
+        desc = model.get("description", "")
+        # Truncate long descriptions
+        if len(desc) > 50:
+            desc = desc[:47] + "..."
+        table.add_row(
+            model["model"],
+            str(model.get("dim", "?")),
+            desc,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(models)} models[/dim]")
+    console.print(f"[dim]Default: {DEFAULT_EMBEDDING_MODEL}[/dim]")
 
 
 if __name__ == "__main__":
