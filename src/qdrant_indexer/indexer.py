@@ -69,6 +69,9 @@ ProgressCallback = Callable[[str, int, int, str], None]
 # Default number of workers for parallel processing
 DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
 
+# Default batch size for embedding - smaller batches use less GPU memory
+DEFAULT_EMBEDDING_BATCH_SIZE = 64
+
 
 @dataclass
 class PreparedChunk:
@@ -91,6 +94,38 @@ class LoadedFile:
     error: str | None = None
 
 
+def is_cuda_available() -> bool:
+    """Check if CUDA is available for ONNX Runtime.
+
+    Returns:
+        True if CUDAExecutionProvider is available.
+    """
+    try:
+        import onnxruntime as ort
+        return "CUDAExecutionProvider" in ort.get_available_providers()
+    except ImportError:
+        return False
+
+
+def get_default_providers(use_cuda: bool = False) -> list[str]:
+    """Get the list of execution providers to use.
+
+    Args:
+        use_cuda: Whether to attempt using CUDA if available.
+
+    Returns:
+        List of provider names in priority order.
+    """
+    if use_cuda:
+        if is_cuda_available():
+            logger.info("CUDA is available, using GPU acceleration")
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        else:
+            logger.warning("CUDA requested but not available, falling back to CPU")
+
+    return ["CPUExecutionProvider"]
+
+
 class QdrantIndexer:
     """Orchestrates document loading, chunking, embedding, and uploading to Qdrant.
 
@@ -98,6 +133,7 @@ class QdrantIndexer:
         client: QdrantClient instance for database operations.
         collection: Name of the Qdrant collection to use.
         embeddings: TextEmbedding model for generating vectors.
+        use_cuda: Whether GPU acceleration is enabled.
     """
 
     def __init__(
@@ -105,6 +141,7 @@ class QdrantIndexer:
         qdrant_url: str,
         collection_name: str,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+        use_cuda: bool | None = None,
     ):
         """Initialize the indexer.
 
@@ -112,25 +149,35 @@ class QdrantIndexer:
             qdrant_url: URL of the Qdrant server.
             collection_name: Name of the collection to index into.
             embedding_model: FastEmbed model name for embeddings.
+            use_cuda: Enable CUDA/GPU acceleration. If None, auto-detect from
+                      QDRANT_INDEXER_USE_CUDA environment variable.
         """
         self.client = QdrantClient(url=qdrant_url)
         self.collection = collection_name
         self.embedding_model = embedding_model
+
+        # Auto-detect CUDA from environment if not explicitly set
+        if use_cuda is None:
+            use_cuda = os.environ.get("QDRANT_INDEXER_USE_CUDA", "").lower() in ("1", "true", "yes")
+
+        self.use_cuda = use_cuda
 
         # Get model info for vector dimensions
         model_info = get_model_info(embedding_model)
         self._vector_size = model_info["dim"]
         self._vector_name = model_to_vector_name(embedding_model)
 
-        # Explicitly use CPU provider to avoid GPU initialization warnings
+        # Configure execution providers
+        providers = get_default_providers(use_cuda)
+
         self.embeddings = TextEmbedding(
             model_name=embedding_model,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
         )
 
         logger.debug(
             f"Initialized indexer for collection '{collection_name}' at {qdrant_url} "
-            f"with model '{embedding_model}' (dim={self._vector_size})"
+            f"with model '{embedding_model}' (dim={self._vector_size}, cuda={self.use_cuda})"
         )
 
     def ensure_collection(self) -> bool:
@@ -462,6 +509,7 @@ class QdrantIndexer:
         exclude_patterns: list[str] | None = None,
         on_progress: ProgressCallback | None = None,
         workers: int = DEFAULT_WORKERS,
+        embedding_batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE,
     ) -> dict:
         """Index all matching files in a directory with parallel processing.
 
@@ -473,6 +521,8 @@ class QdrantIndexer:
             exclude_patterns: Additional glob patterns to exclude.
             on_progress: Optional callback for progress updates.
             workers: Number of parallel workers for file loading (default: CPU count, max 4).
+            embedding_batch_size: Number of chunks to embed at once (default: 64).
+                Smaller values use less GPU memory.
 
         Returns:
             Summary dict with total_files, total_chunks, failed_files, and skipped_files.
@@ -571,14 +621,23 @@ class QdrantIndexer:
             }
 
         total_chunks = len(all_chunks)
-        logger.info(f"Generating embeddings for {total_chunks} chunks...")
+        logger.info(f"Generating embeddings for {total_chunks} chunks (batch size: {embedding_batch_size})...")
 
         if on_progress:
             on_progress("embedding", 0, total_chunks, f"Embedding {total_chunks} chunks...")
 
-        # Generate embeddings for all chunks at once (FastEmbed handles batching internally)
+        # Generate embeddings in batches to avoid GPU OOM
         chunk_texts = [c.text for c in all_chunks]
-        embeddings = list(self.embeddings.embed(chunk_texts))
+        embeddings: list = []
+
+        for i in range(0, len(chunk_texts), embedding_batch_size):
+            batch = chunk_texts[i : i + embedding_batch_size]
+            batch_embeddings = list(self.embeddings.embed(batch))
+            embeddings.extend(batch_embeddings)
+
+            if on_progress:
+                completed = min(i + embedding_batch_size, total_chunks)
+                on_progress("embedding", completed, total_chunks, f"Embedding {completed}/{total_chunks} chunks...")
 
         if on_progress:
             on_progress("embedding", total_chunks, total_chunks, "Embeddings complete")

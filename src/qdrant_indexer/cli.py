@@ -15,7 +15,13 @@ from rich.table import Table
 
 from qdrant_indexer.chunkers import RecursiveChunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
-from qdrant_indexer.indexer import DEFAULT_EMBEDDING_MODEL, DEFAULT_WORKERS, QdrantIndexer
+from qdrant_indexer.indexer import (
+    DEFAULT_EMBEDDING_BATCH_SIZE,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_WORKERS,
+    QdrantIndexer,
+    is_cuda_available,
+)
 
 app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collections")
 console = Console()
@@ -71,6 +77,8 @@ def index(
     exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
     workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel workers for file loading")] = DEFAULT_WORKERS,
+    gpu: Annotated[bool, typer.Option("--gpu", "--cuda", help="Enable GPU/CUDA acceleration for embeddings")] = False,
+    embedding_batch_size: Annotated[int, typer.Option("--embedding-batch-size", help="Chunks to embed at once (lower = less GPU memory)")] = DEFAULT_EMBEDDING_BATCH_SIZE,
     verbose: Annotated[int, typer.Option("--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)")] = 0,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
 ) -> None:
@@ -84,6 +92,9 @@ def index(
         # Index documentation
         qdrant-indexer index ./docs -c my-docs
 
+        # Index with GPU acceleration (requires CUDA build)
+        qdrant-indexer index ./docs -c my-docs --gpu
+
         # Index Python codebase
         qdrant-indexer index ./src -c my-code -p "**/*.py"
 
@@ -93,8 +104,8 @@ def index(
         # Index code with Jina v3 (multilingual + code support)
         qdrant-indexer index ./src -c my-code -m jinaai/jina-embeddings-v3
 
-        # Index mixed docs and code
-        qdrant-indexer index ./project -c full-index
+        # Index mixed docs and code with GPU
+        qdrant-indexer index ./project -c full-index --gpu
     """
     setup_logging(verbose, quiet)
 
@@ -109,6 +120,13 @@ def index(
     start_time = time.time()
 
     try:
+        # Check GPU availability if requested
+        if gpu and not quiet:
+            if is_cuda_available():
+                console.print("[green]✓[/green] CUDA available - GPU acceleration enabled")
+            else:
+                console.print("[yellow]⚠[/yellow] CUDA not available - falling back to CPU")
+
         # Initialize indexer (shows spinner during model loading)
         with Progress(
             SpinnerColumn(),
@@ -122,6 +140,7 @@ def index(
                 qdrant_url=url,
                 collection_name=collection,
                 embedding_model=embedding_model,
+                use_cuda=gpu,
             )
 
             progress.update(init_task, description="Connecting to Qdrant...")
@@ -195,6 +214,7 @@ def index(
                 exclude_patterns=exclude_patterns if exclude_patterns else None,
                 on_progress=on_progress,
                 workers=workers,
+                embedding_batch_size=embedding_batch_size,
             )
 
             progress.update(task, description="Complete", completed=result["total_chunks"])
@@ -211,6 +231,9 @@ def index(
             if result["skipped_files"]:
                 summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
             summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
+            if gpu:
+                gpu_status = "[green]Yes[/green]" if indexer.use_cuda and is_cuda_available() else "[yellow]No (fallback)[/yellow]"
+                summary.add_row("GPU:", gpu_status)
             summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
 
             if result["failed_files"]:
