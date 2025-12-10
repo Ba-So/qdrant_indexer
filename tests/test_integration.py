@@ -144,9 +144,11 @@ More content here to ensure we have enough text for chunking.
         indexer.ensure_collection()
 
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
-        chunk_count = indexer.index_file(test_file, chunker)
+        chunk_count, point_ids = indexer.index_file(test_file, chunker)
 
         assert chunk_count > 0
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
 
         # Verify points exist in collection
         collection_info = qdrant_client.get_collection(test_collection_name)
@@ -261,10 +263,11 @@ Object-oriented programming in Python uses classes and objects.
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
 
         # Index the same file twice
-        count1 = indexer.index_file(test_file, chunker)
-        count2 = indexer.index_file(test_file, chunker)
+        count1, ids1 = indexer.index_file(test_file, chunker)
+        count2, ids2 = indexer.index_file(test_file, chunker)
 
         assert count1 == count2
+        assert ids1 == ids2
 
         # Should have same number of points (upsert behavior)
         collection_info = qdrant_client.get_collection(test_collection_name)
@@ -336,10 +339,12 @@ class Calculator:
         indexer.ensure_collection()
 
         chunker = RecursiveChunker()
-        chunk_count = indexer.index_file(code_file, chunker)
+        chunk_count, point_ids = indexer.index_file(code_file, chunker)
 
         # Should have indexed symbols (module, function, class, 2 methods)
         assert chunk_count >= 4
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
 
         # Verify points exist
         collection_info = qdrant_client.get_collection(test_collection_name)
@@ -594,9 +599,11 @@ class TestEdgeCases:
         indexer.ensure_collection()
 
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
-        chunk_count = indexer.index_file(large_file, chunker, batch_size=10)
+        chunk_count, point_ids = indexer.index_file(large_file, chunker, batch_size=10)
 
         assert chunk_count > 10  # Should have many chunks
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
 
         # All chunks should be indexed
         collection_info = qdrant_client.get_collection(test_collection_name)
@@ -636,9 +643,11 @@ Math symbols: ∑ ∏ √ ∞ ≤ ≥ ≠
         indexer.ensure_collection()
 
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
-        chunk_count = indexer.index_file(test_file, chunker)
+        chunk_count, point_ids = indexer.index_file(test_file, chunker)
 
         assert chunk_count > 0
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
 
         # Verify content preserved
         collection_info = qdrant_client.get_collection(test_collection_name)

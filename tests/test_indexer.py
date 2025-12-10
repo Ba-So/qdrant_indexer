@@ -91,9 +91,11 @@ class TestIndexFile:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker(chunk_size=1000)
-        result = indexer.index_file(sample_markdown_file, chunker)
+        chunk_count, point_ids = indexer.index_file(sample_markdown_file, chunker)
 
-        assert result >= 1
+        assert chunk_count >= 1
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
         mock_client_instance.upsert.assert_called()
 
     @patch("qdrant_indexer.indexer.QdrantClient")
@@ -112,10 +114,12 @@ class TestIndexFile:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker(chunk_size=50)  # Small chunks
-        result = indexer.index_file(sample_markdown_file, chunker)
+        chunk_count, point_ids = indexer.index_file(sample_markdown_file, chunker)
 
-        assert isinstance(result, int)
-        assert result >= 0
+        assert isinstance(chunk_count, int)
+        assert isinstance(point_ids, list)
+        assert chunk_count >= 0
+        assert len(point_ids) == chunk_count
 
 
 class TestIndexDirectory:
@@ -323,10 +327,12 @@ class TestCodeFileIndexing:
         from qdrant_indexer.loaders import LOADERS
         LOADERS[".py"] = PythonCodeLoader
 
-        result = indexer.index_file(py_file, chunker)
+        chunk_count, point_ids = indexer.index_file(py_file, chunker)
 
         # Should have indexed at least one symbol
-        assert result >= 1
+        assert chunk_count >= 1
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
         mock_client_instance.upsert.assert_called()
 
         # Check that points were created with code metadata
@@ -359,9 +365,11 @@ class TestCodeFileIndexing:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker()
-        result = indexer.index_file(md_file, chunker)
+        chunk_count, point_ids = indexer.index_file(md_file, chunker)
 
-        assert result >= 1
+        assert chunk_count >= 1
+        assert isinstance(point_ids, list)
+        assert len(point_ids) == chunk_count
         mock_client_instance.upsert.assert_called()
 
         # Check payload doesn't have code-specific fields

@@ -12,7 +12,7 @@ from typing import Callable
 
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
 
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker
 from qdrant_indexer.filters import filter_files
@@ -205,13 +205,68 @@ class QdrantIndexer:
         logger.info(f"Created collection '{self.collection}'")
         return True
 
+    def delete_file_chunks(self, file_path: Path) -> int:
+        """Delete all chunks for a file from the database.
+
+        Uses filter query on source field to find and delete points.
+
+        Args:
+            file_path: Path to the file whose chunks should be deleted.
+
+        Returns:
+            Number of points deleted.
+        """
+        source = str(file_path.absolute())
+
+        # Query to count points before deletion
+        result = self.client.scroll(
+            collection_name=self.collection,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="source",
+                        match=MatchValue(value=source)
+                    )
+                ]
+            ),
+            limit=10000,  # Reasonable limit
+            with_payload=False,
+            with_vectors=False,
+        )
+
+        point_ids = [point.id for point in result[0]]
+
+        if point_ids:
+            self.client.delete(
+                collection_name=self.collection,
+                points_selector=point_ids,
+            )
+            logger.info(f"Deleted {len(point_ids)} chunks for {file_path.name}")
+
+        return len(point_ids)
+
+    def delete_points_by_ids(self, point_ids: list[int]) -> None:
+        """Delete specific points by their IDs.
+
+        Args:
+            point_ids: List of point IDs to delete.
+        """
+        if not point_ids:
+            return
+
+        self.client.delete(
+            collection_name=self.collection,
+            points_selector=point_ids,
+        )
+        logger.debug(f"Deleted {len(point_ids)} points")
+
     def index_file(
         self,
         file_path: Path,
         chunker: Chunker,
         batch_size: int = 100,
         on_progress: ProgressCallback | None = None,
-    ) -> int:
+    ) -> tuple[int, list[int]]:
         """Index a single file into Qdrant.
 
         Args:
@@ -221,7 +276,7 @@ class QdrantIndexer:
             on_progress: Optional callback for progress updates.
 
         Returns:
-            Number of chunks indexed.
+            Tuple of (chunk_count, list of point IDs).
         """
         logger.debug(f"Loading file: {file_path}")
         loader = get_loader(file_path)
@@ -240,7 +295,7 @@ class QdrantIndexer:
         chunker: Chunker,
         batch_size: int,
         on_progress: ProgressCallback | None,
-    ) -> int:
+    ) -> tuple[int, list[int]]:
         """Index regular document (non-code).
 
         Args:
@@ -251,16 +306,17 @@ class QdrantIndexer:
             on_progress: Optional callback for progress updates.
 
         Returns:
-            Number of chunks indexed.
+            Tuple of (chunk_count, list of point IDs).
         """
         logger.debug(f"Chunking content ({len(doc.content)} chars)")
         chunks = chunker.chunk(doc.content)
         if not chunks:
             logger.debug(f"No chunks generated for {file_path}")
-            return 0
+            return 0, []
 
         total_chunks = len(chunks)
         points_batch: list[PointStruct] = []
+        point_ids: list[int] = []
 
         if on_progress:
             on_progress("embedding", 0, total_chunks, f"Embedding {file_path.name}")
@@ -271,6 +327,7 @@ class QdrantIndexer:
 
         for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
             point_id = self._generate_point_id(file_path, i)
+            point_ids.append(point_id)
             payload = self._build_payload(
                 chunk=chunk,
                 file_path=file_path,
@@ -307,7 +364,7 @@ class QdrantIndexer:
             )
 
         logger.info(f"Indexed {file_path.name}: {total_chunks} chunks")
-        return total_chunks
+        return total_chunks, point_ids
 
     def _index_code_file(
         self,
@@ -316,7 +373,7 @@ class QdrantIndexer:
         chunker: Chunker,
         batch_size: int,
         on_progress: ProgressCallback | None,
-    ) -> int:
+    ) -> tuple[int, list[int]]:
         """Index code file with symbol metadata.
 
         Args:
@@ -327,12 +384,12 @@ class QdrantIndexer:
             on_progress: Optional callback for progress updates.
 
         Returns:
-            Number of chunks indexed.
+            Tuple of (chunk_count, list of point IDs).
         """
         symbols = doc.metadata["symbols"]
         if not symbols:
             logger.debug(f"No symbols extracted from {file_path}")
-            return 0
+            return 0, []
 
         # Try to use CodeChunker if available
         try:
@@ -350,10 +407,11 @@ class QdrantIndexer:
 
         if not chunks_with_symbols:
             logger.debug(f"No chunks generated from symbols in {file_path}")
-            return 0
+            return 0, []
 
         total_chunks = len(chunks_with_symbols)
         points_batch: list[PointStruct] = []
+        point_ids: list[int] = []
 
         if on_progress:
             on_progress("embedding", 0, total_chunks, f"Embedding {file_path.name}")
@@ -365,6 +423,7 @@ class QdrantIndexer:
 
         for i, ((chunk_text, symbol), vector) in enumerate(zip(chunks_with_symbols, embeddings)):
             point_id = self._generate_point_id(file_path, i)
+            point_ids.append(point_id)
             payload = self._build_code_payload(
                 chunk=chunk_text,
                 symbol=symbol,
@@ -402,7 +461,7 @@ class QdrantIndexer:
             )
 
         logger.info(f"Indexed {file_path.name}: {total_chunks} code chunks")
-        return total_chunks
+        return total_chunks, point_ids
 
     def _fallback_chunk_symbols(
         self, symbols: list[CodeSymbol], chunker: Chunker

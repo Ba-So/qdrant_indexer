@@ -229,7 +229,7 @@ class TestCodeIndexingPerformance:
         total_files = 0
 
         for file in code_dir.glob("*.py"):
-            chunks = indexer.index_file(file, chunker)
+            chunks, _ = indexer.index_file(file, chunker)
             total_chunks += chunks
             total_files += 1
 
@@ -287,7 +287,7 @@ class TestCodeIndexingPerformance:
         total_files = 0
 
         for file in code_dir.glob("*.php"):
-            chunks = indexer.index_file(file, chunker)
+            chunks, _ = indexer.index_file(file, chunker)
             total_chunks += chunks
             total_files += 1
 
