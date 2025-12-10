@@ -525,3 +525,93 @@ class TestCodeFileIndexing:
             assert isinstance(symbol, CodeSymbol)
             # Chunk should contain symbol info
             assert symbol.name in chunk_text or symbol.symbol_type in chunk_text
+
+
+class TestDeletionMethods:
+    """Tests for file deletion methods."""
+
+    @patch("qdrant_indexer.indexer.get_model_info")
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_delete_points_by_ids_empty_list(self, mock_embedding, mock_client, mock_model_info):
+        """Test delete_points_by_ids with empty list."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
+        mock_client_instance = MagicMock()
+        mock_client.return_value = mock_client_instance
+
+        indexer = QdrantIndexer("http://localhost:6333", "test-collection")
+
+        # Should not call delete with empty list
+        indexer.delete_points_by_ids([])
+        mock_client_instance.delete.assert_not_called()
+
+    @patch("qdrant_indexer.indexer.get_model_info")
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_delete_points_by_ids(self, mock_embedding, mock_client, mock_model_info):
+        """Test delete_points_by_ids with valid IDs."""
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
+        mock_client_instance = MagicMock()
+        mock_client.return_value = mock_client_instance
+
+        indexer = QdrantIndexer("http://localhost:6333", "test-collection")
+
+        point_ids = [1, 2, 3, 4, 5]
+        indexer.delete_points_by_ids(point_ids)
+
+        mock_client_instance.delete.assert_called_once_with(
+            collection_name="test-collection",
+            points_selector=point_ids,
+        )
+
+    @patch("qdrant_indexer.indexer.get_model_info")
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_delete_file_chunks_no_points(self, mock_embedding, mock_client, mock_model_info):
+        """Test delete_file_chunks when no points exist for file."""
+        from qdrant_client.models import Record
+
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
+        mock_client_instance = MagicMock()
+        mock_client.return_value = mock_client_instance
+
+        # Mock scroll to return no points
+        mock_client_instance.scroll.return_value = ([], None)
+
+        indexer = QdrantIndexer("http://localhost:6333", "test-collection")
+
+        file_path = Path("/test/doc.md")
+        deleted_count = indexer.delete_file_chunks(file_path)
+
+        assert deleted_count == 0
+        mock_client_instance.delete.assert_not_called()
+
+    @patch("qdrant_indexer.indexer.get_model_info")
+    @patch("qdrant_indexer.indexer.QdrantClient")
+    @patch("qdrant_indexer.indexer.TextEmbedding")
+    def test_delete_file_chunks_with_points(self, mock_embedding, mock_client, mock_model_info):
+        """Test delete_file_chunks when points exist for file."""
+        from qdrant_client.models import Record
+
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
+        mock_client_instance = MagicMock()
+        mock_client.return_value = mock_client_instance
+
+        # Mock scroll to return 3 points
+        mock_points = [
+            Record(id=1, payload={}, vector=None),
+            Record(id=2, payload={}, vector=None),
+            Record(id=3, payload={}, vector=None),
+        ]
+        mock_client_instance.scroll.return_value = (mock_points, None)
+
+        indexer = QdrantIndexer("http://localhost:6333", "test-collection")
+
+        file_path = Path("/test/doc.md")
+        deleted_count = indexer.delete_file_chunks(file_path)
+
+        assert deleted_count == 3
+        mock_client_instance.delete.assert_called_once_with(
+            collection_name="test-collection",
+            points_selector=[1, 2, 3],
+        )
