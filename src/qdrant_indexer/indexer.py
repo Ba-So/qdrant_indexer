@@ -2,7 +2,10 @@
 
 import hashlib
 import logging
+import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -62,6 +65,30 @@ def model_to_vector_name(model_name: str) -> str:
 
 # Progress callback type: (event, current, total, message)
 ProgressCallback = Callable[[str, int, int, str], None]
+
+# Default number of workers for parallel processing
+DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
+
+
+@dataclass
+class PreparedChunk:
+    """A chunk prepared for embedding and upload."""
+
+    text: str
+    file_path: Path
+    chunk_index: int
+    total_chunks: int
+    metadata: dict
+    symbol: CodeSymbol | None = None
+
+
+@dataclass
+class LoadedFile:
+    """Result of loading and chunking a file."""
+
+    file_path: Path
+    chunks: list[PreparedChunk]
+    error: str | None = None
 
 
 class QdrantIndexer:
@@ -355,6 +382,77 @@ class QdrantIndexer:
 
         return chunks_with_symbols
 
+    def _load_and_chunk_file(
+        self, file_path: Path, chunker: Chunker
+    ) -> LoadedFile:
+        """Load a file and prepare chunks for embedding.
+
+        This method is designed to be called in parallel threads.
+
+        Args:
+            file_path: Path to the file to load.
+            chunker: Chunker instance for splitting content.
+
+        Returns:
+            LoadedFile with prepared chunks or error.
+        """
+        try:
+            loader = get_loader(file_path)
+            doc = loader.load(file_path)
+
+            prepared_chunks: list[PreparedChunk] = []
+
+            # Check if this is a code document with symbols
+            if doc.metadata.get("is_code") and "symbols" in doc.metadata:
+                symbols = doc.metadata["symbols"]
+                if symbols:
+                    # Try to use CodeChunker if available
+                    try:
+                        from qdrant_indexer.chunkers import CodeChunker
+
+                        if isinstance(chunker, CodeChunker):
+                            chunks_with_symbols = chunker.chunk_symbols(symbols)
+                        else:
+                            chunks_with_symbols = self._fallback_chunk_symbols(
+                                symbols, chunker
+                            )
+                    except ImportError:
+                        chunks_with_symbols = self._fallback_chunk_symbols(
+                            symbols, chunker
+                        )
+
+                    for i, (chunk_text, symbol) in enumerate(chunks_with_symbols):
+                        prepared_chunks.append(
+                            PreparedChunk(
+                                text=chunk_text,
+                                file_path=file_path,
+                                chunk_index=i,
+                                total_chunks=len(chunks_with_symbols),
+                                metadata=doc.metadata,
+                                symbol=symbol,
+                            )
+                        )
+            else:
+                # Regular document
+                chunks = chunker.chunk(doc.content)
+                for i, chunk in enumerate(chunks):
+                    prepared_chunks.append(
+                        PreparedChunk(
+                            text=chunk,
+                            file_path=file_path,
+                            chunk_index=i,
+                            total_chunks=len(chunks),
+                            metadata=doc.metadata,
+                            symbol=None,
+                        )
+                    )
+
+            return LoadedFile(file_path=file_path, chunks=prepared_chunks)
+
+        except Exception as e:
+            logger.error(f"Failed to load {file_path}: {e}")
+            return LoadedFile(file_path=file_path, chunks=[], error=str(e))
+
     def index_directory(
         self,
         path: Path,
@@ -363,8 +461,9 @@ class QdrantIndexer:
         batch_size: int = 100,
         exclude_patterns: list[str] | None = None,
         on_progress: ProgressCallback | None = None,
+        workers: int = DEFAULT_WORKERS,
     ) -> dict:
-        """Index all matching files in a directory.
+        """Index all matching files in a directory with parallel processing.
 
         Args:
             path: Directory path to index.
@@ -373,6 +472,7 @@ class QdrantIndexer:
             batch_size: Number of points to upload per batch.
             exclude_patterns: Additional glob patterns to exclude.
             on_progress: Optional callback for progress updates.
+            workers: Number of parallel workers for file loading (default: CPU count, max 4).
 
         Returns:
             Summary dict with total_files, total_chunks, failed_files, and skipped_files.
@@ -403,35 +503,153 @@ class QdrantIndexer:
         logger.info(f"Found {total_files_to_process} files matching patterns: {patterns_str}")
 
         if on_progress:
-            on_progress("discovery", total_files_to_process, total_files_to_process, f"Found {total_files_to_process} files")
+            on_progress(
+                "discovery",
+                total_files_to_process,
+                total_files_to_process,
+                f"Found {total_files_to_process} files",
+            )
 
-        total_files = 0
-        total_chunks = 0
+        # Phase 1: Parallel file loading and chunking
+        logger.info(f"Loading files with {workers} workers...")
+        if on_progress:
+            on_progress("loading", 0, total_files_to_process, "Loading files...")
+
+        loaded_files: list[LoadedFile] = []
         failed_files: list[str] = []
+        files_loaded = 0
 
-        for idx, file_path in enumerate(files):
-            if on_progress:
-                on_progress("file", idx, total_files_to_process, f"Processing {file_path.name}")
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            # Submit all file loading tasks
+            future_to_file = {
+                executor.submit(self._load_and_chunk_file, f, chunker): f
+                for f in files
+            }
 
-            try:
-                chunks_count = self.index_file(file_path, chunker, batch_size)
-                total_files += 1
-                total_chunks += chunks_count
+            # Collect results as they complete
+            for future in as_completed(future_to_file):
+                file_path = future_to_file[future]
+                files_loaded += 1
+
+                try:
+                    result = future.result()
+                    if result.error:
+                        failed_files.append(f"{result.file_path}: {result.error}")
+                        if on_progress:
+                            on_progress(
+                                "file_error",
+                                files_loaded,
+                                total_files_to_process,
+                                f"Failed: {file_path.name}",
+                            )
+                    else:
+                        loaded_files.append(result)
+                        if on_progress:
+                            on_progress(
+                                "file_loaded",
+                                files_loaded,
+                                total_files_to_process,
+                                f"Loaded {file_path.name}: {len(result.chunks)} chunks",
+                            )
+                except Exception as e:
+                    failed_files.append(f"{file_path}: {e}")
+                    logger.error(f"Failed to load {file_path}: {e}")
+
+        # Phase 2: Batch embedding across all files
+        # Collect all chunks for efficient batch embedding
+        all_chunks: list[PreparedChunk] = []
+        for loaded_file in loaded_files:
+            all_chunks.extend(loaded_file.chunks)
+
+        if not all_chunks:
+            logger.info("No chunks to index")
+            return {
+                "total_files": 0,
+                "total_chunks": 0,
+                "failed_files": failed_files,
+                "skipped_files": len(skipped),
+            }
+
+        total_chunks = len(all_chunks)
+        logger.info(f"Generating embeddings for {total_chunks} chunks...")
+
+        if on_progress:
+            on_progress("embedding", 0, total_chunks, f"Embedding {total_chunks} chunks...")
+
+        # Generate embeddings for all chunks at once (FastEmbed handles batching internally)
+        chunk_texts = [c.text for c in all_chunks]
+        embeddings = list(self.embeddings.embed(chunk_texts))
+
+        if on_progress:
+            on_progress("embedding", total_chunks, total_chunks, "Embeddings complete")
+
+        # Phase 3: Build points and upload in batches
+        logger.info(f"Uploading to Qdrant in batches of {batch_size}...")
+        if on_progress:
+            on_progress("uploading", 0, total_chunks, "Uploading to Qdrant...")
+
+        points_batch: list[PointStruct] = []
+        uploaded_count = 0
+
+        for chunk, vector in zip(all_chunks, embeddings):
+            point_id = self._generate_point_id(chunk.file_path, chunk.chunk_index)
+
+            if chunk.symbol:
+                payload = self._build_code_payload(
+                    chunk=chunk.text,
+                    symbol=chunk.symbol,
+                    file_path=chunk.file_path,
+                    chunk_index=chunk.chunk_index,
+                    total_chunks=chunk.total_chunks,
+                    metadata=chunk.metadata,
+                )
+            else:
+                payload = self._build_payload(
+                    chunk=chunk.text,
+                    file_path=chunk.file_path,
+                    chunk_index=chunk.chunk_index,
+                    total_chunks=chunk.total_chunks,
+                    metadata=chunk.metadata,
+                )
+
+            points_batch.append(
+                PointStruct(
+                    id=point_id,
+                    vector={self._vector_name: list(vector)},
+                    payload=payload,
+                )
+            )
+
+            if len(points_batch) >= batch_size:
+                self.client.upsert(
+                    collection_name=self.collection,
+                    points=points_batch,
+                )
+                uploaded_count += len(points_batch)
+                points_batch = []
 
                 if on_progress:
-                    on_progress("file_done", idx + 1, total_files_to_process, f"Indexed {file_path.name}: {chunks_count} chunks")
+                    on_progress(
+                        "uploading",
+                        uploaded_count,
+                        total_chunks,
+                        f"Uploaded {uploaded_count}/{total_chunks}",
+                    )
 
-            except Exception as e:
-                error_msg = f"{file_path}: {e}"
-                logger.error(f"Failed to index {file_path}: {e}")
-                failed_files.append(error_msg)
+        # Upload remaining points
+        if points_batch:
+            self.client.upsert(
+                collection_name=self.collection,
+                points=points_batch,
+            )
+            uploaded_count += len(points_batch)
 
-                if on_progress:
-                    on_progress("file_error", idx + 1, total_files_to_process, f"Failed: {file_path.name}")
+        if on_progress:
+            on_progress("uploading", total_chunks, total_chunks, "Upload complete")
 
-        logger.info(f"Indexing complete: {total_files} files, {total_chunks} chunks")
+        logger.info(f"Indexing complete: {len(loaded_files)} files, {total_chunks} chunks")
         return {
-            "total_files": total_files,
+            "total_files": len(loaded_files),
             "total_chunks": total_chunks,
             "failed_files": failed_files,
             "skipped_files": len(skipped),

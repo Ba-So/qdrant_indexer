@@ -15,7 +15,7 @@ from rich.table import Table
 
 from qdrant_indexer.chunkers import RecursiveChunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
-from qdrant_indexer.indexer import DEFAULT_EMBEDDING_MODEL, QdrantIndexer
+from qdrant_indexer.indexer import DEFAULT_EMBEDDING_MODEL, DEFAULT_WORKERS, QdrantIndexer
 
 app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collections")
 console = Console()
@@ -70,6 +70,7 @@ def index(
     batch_size: Annotated[int, typer.Option("--batch-size", help="Batch size for uploads")] = 100,
     exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
+    workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel workers for file loading")] = DEFAULT_WORKERS,
     verbose: Annotated[int, typer.Option("--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)")] = 0,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
 ) -> None:
@@ -136,45 +137,23 @@ def index(
 
         chunker = RecursiveChunker(chunk_size=chunk_size, overlap=chunk_overlap)
 
-        # Discover and filter files
-        all_files = []
-        seen = set()
-        for p in pattern:
-            for f in path.glob(p):
-                if f.is_file() and f not in seen:
-                    all_files.append(f)
-                    seen.add(f)
-
-        files, skipped = filter_files(
-            all_files,
-            path,
-            exclude_patterns=exclude,
-            use_defaults=not no_default_excludes,
-        )
-
-        if not files:
-            if not quiet:
-                patterns_str = ", ".join(pattern)
-                console.print(f"[yellow]No files found matching patterns: {patterns_str}[/yellow]")
-                if skipped:
-                    console.print(f"[dim]({len(skipped)} files excluded by patterns)[/dim]")
-            return
+        # Build exclude patterns list
+        exclude_patterns = list(exclude) if exclude else []
+        if not no_default_excludes:
+            exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
 
         if not quiet:
-            msg = f"Found [cyan]{len(files)}[/cyan] files to index"
-            if skipped:
-                msg += f" [dim]({len(skipped)} excluded)[/dim]"
-            console.print(msg)
+            console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
 
-        if verbose >= 2 and skipped:
-            console.print("\n[dim]Excluded files:[/dim]")
-            for f in skipped[:10]:  # Show first 10
-                console.print(f"  [dim]• {f.relative_to(path)}[/dim]")
-            if len(skipped) > 10:
-                console.print(f"  [dim]... and {len(skipped) - 10} more[/dim]")
-            console.print()
+        # Progress tracking state
+        progress_state = {
+            "phase": "discovery",
+            "current": 0,
+            "total": 0,
+            "message": "",
+        }
 
-        # Progress bar for file indexing
+        # Progress bar with phases
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -184,29 +163,41 @@ def index(
             console=console,
             disable=quiet,
         ) as progress:
-            file_task = progress.add_task("Indexing files...", total=len(files))
+            task = progress.add_task("Discovering files...", total=None)
 
-            total_files = 0
-            total_chunks = 0
-            failed_files: list[str] = []
+            def on_progress(event: str, current: int, total: int, message: str) -> None:
+                """Handle progress updates from indexer."""
+                if event == "discovery":
+                    progress.update(task, description=f"Found {total} files", total=total, completed=0)
+                elif event == "loading":
+                    progress.update(task, description="Loading files...", total=total, completed=current)
+                elif event == "file_loaded":
+                    progress.update(task, description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}", completed=current)
+                elif event == "file_error":
+                    progress.update(task, completed=current)
+                elif event == "embedding":
+                    if current == 0:
+                        progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
+                    else:
+                        progress.update(task, description="Embedding complete", completed=total)
+                elif event == "uploading":
+                    if current == 0:
+                        progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)
+                    else:
+                        progress.update(task, description=f"Uploading ({current}/{total})", completed=current)
 
-            for file_path in files:
-                progress.update(file_task, description=f"[cyan]{file_path.name}[/cyan]")
+            # Run parallel indexing
+            result = indexer.index_directory(
+                path=path,
+                patterns=pattern,
+                chunker=chunker,
+                batch_size=batch_size,
+                exclude_patterns=exclude_patterns if exclude_patterns else None,
+                on_progress=on_progress,
+                workers=workers,
+            )
 
-                try:
-                    chunks_count = indexer.index_file(file_path, chunker, batch_size)
-                    total_files += 1
-                    total_chunks += chunks_count
-
-                    if verbose >= 1 and not quiet:
-                        console.print(f"  [dim]{file_path.name}:[/dim] {chunks_count} chunks")
-
-                except Exception as e:
-                    failed_files.append(f"{file_path}: {e}")
-                    if verbose >= 1:
-                        console.print(f"  [red]Failed:[/red] {file_path.name}: {e}")
-
-                progress.advance(file_task)
+            progress.update(task, description="Complete", completed=result["total_chunks"])
 
         elapsed = time.time() - start_time
 
@@ -215,20 +206,21 @@ def index(
             summary = Table.grid(padding=(0, 2))
             summary.add_column()
             summary.add_column()
-            summary.add_row("Files indexed:", f"[cyan]{total_files}[/cyan]")
-            summary.add_row("Chunks created:", f"[cyan]{total_chunks}[/cyan]")
-            if skipped:
-                summary.add_row("Files skipped:", f"[dim]{len(skipped)}[/dim]")
+            summary.add_row("Files indexed:", f"[cyan]{result['total_files']}[/cyan]")
+            summary.add_row("Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]")
+            if result["skipped_files"]:
+                summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
+            summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
             summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
 
-            if failed_files:
-                summary.add_row("Failed files:", f"[red]{len(failed_files)}[/red]")
+            if result["failed_files"]:
+                summary.add_row("Failed files:", f"[red]{len(result['failed_files'])}[/red]")
 
             console.print(Panel(summary, title="Indexing Complete", border_style="green"))
 
-            if failed_files:
+            if result["failed_files"]:
                 console.print("\n[yellow]Failed files:[/yellow]")
-                for failed in failed_files:
+                for failed in result["failed_files"]:
                     console.print(f"  [red]•[/red] {failed}")
 
     except Exception as e:
