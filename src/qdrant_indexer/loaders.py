@@ -143,6 +143,7 @@ CODE_EXTENSIONS: dict[str, str] = {
     ".php4": "php",
     ".php5": "php",
     ".phtml": "php",
+    ".rs": "rust",
 }
 
 
@@ -164,13 +165,19 @@ def get_loader(file_path: Path) -> DocumentLoader:
 
     # Check code loaders (lazy import to avoid circular dependency)
     if extension in CODE_EXTENSIONS:
-        from qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader
+        from qdrant_indexer.code_loaders import (
+            PHPCodeLoader,
+            PythonCodeLoader,
+            RustCodeLoader,
+        )
 
         code_type = CODE_EXTENSIONS[extension]
         if code_type == "python":
             return PythonCodeLoader()
         elif code_type == "php":
             return PHPCodeLoader()
+        elif code_type == "rust":
+            return RustCodeLoader()
 
     # Default to text loader
     return TextLoader()

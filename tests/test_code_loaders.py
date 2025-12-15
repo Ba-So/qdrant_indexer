@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from qdrant_indexer.code_loaders import CodeLoader, PHPCodeLoader, PythonCodeLoader
+from qdrant_indexer.code_loaders import (
+    CodeLoader,
+    PHPCodeLoader,
+    PythonCodeLoader,
+    RustCodeLoader,
+)
 from qdrant_indexer.models import CodeSymbol
 
 
@@ -284,16 +289,309 @@ class TestPHPCodeLoader:
         assert "($x)" in context or "Test function." in context
 
 
+class TestRustCodeLoader:
+    """Tests for RustCodeLoader."""
+
+    def test_load_rust_file(self, tmp_path: Path):
+        """Verify Rust file is loaded correctly."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('fn main() {\n    println!("Hello");\n}')
+
+        doc = loader.load(test_file)
+
+        assert 'fn main()' in doc.content
+        assert doc.metadata["is_code"] is True
+        assert doc.metadata["extension"] == ".rs"
+
+    def test_extract_rust_function(self, tmp_path: Path):
+        """Verify Rust function is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// Greet a person.\npub fn greet(name: &str) -> String {\n    format!("Hello, {}", name)\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the function
+        func_symbols = [s for s in symbols if s.symbol_type == "function"]
+        assert len(func_symbols) >= 1
+
+        greet_func = next((s for s in func_symbols if s.name == "greet"), None)
+        assert greet_func is not None
+        assert greet_func.symbol_type == "function"
+        assert greet_func.docstring == "Greet a person."
+        assert greet_func.language == "rust"
+        assert greet_func.visibility == "pub"
+
+    def test_extract_rust_struct(self, tmp_path: Path):
+        """Verify Rust struct is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// A test struct.\n#[derive(Debug, Clone)]\npub struct MyStruct {\n    pub field: i32,\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the struct
+        struct_symbols = [s for s in symbols if s.symbol_type == "struct"]
+        assert len(struct_symbols) == 1
+        assert struct_symbols[0].name == "MyStruct"
+        assert struct_symbols[0].docstring == "A test struct."
+        assert struct_symbols[0].visibility == "pub"
+        assert "Debug" in struct_symbols[0].metadata["derives"]
+        assert "Clone" in struct_symbols[0].metadata["derives"]
+
+    def test_extract_rust_enum(self, tmp_path: Path):
+        """Verify Rust enum is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// Status enum.\npub enum Status {\n    Ok,\n    Error(String),\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the enum
+        enum_symbols = [s for s in symbols if s.symbol_type == "enum"]
+        assert len(enum_symbols) == 1
+        assert enum_symbols[0].name == "Status"
+        assert enum_symbols[0].docstring == "Status enum."
+        assert "Ok" in enum_symbols[0].metadata["variants"]
+        assert "Error" in enum_symbols[0].metadata["variants"]
+
+    def test_extract_rust_trait(self, tmp_path: Path):
+        """Verify Rust trait is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// A handler trait.\npub trait Handler {\n    fn handle(&self);\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the trait
+        trait_symbols = [s for s in symbols if s.symbol_type == "trait"]
+        assert len(trait_symbols) == 1
+        assert trait_symbols[0].name == "Handler"
+        assert trait_symbols[0].docstring == "A handler trait."
+
+        # Should also extract the trait method
+        method_symbols = [s for s in symbols if s.symbol_type == "method"]
+        assert len(method_symbols) >= 1
+        handle_method = next((s for s in method_symbols if s.name == "handle"), None)
+        assert handle_method is not None
+        assert handle_method.parent == "Handler"
+
+    def test_extract_rust_impl(self, tmp_path: Path):
+        """Verify Rust impl block is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('struct Config {}\n\nimpl Config {\n    /// Create new config.\n    pub fn new() -> Self {\n        Config {}\n    }\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the impl block
+        impl_symbols = [s for s in symbols if s.symbol_type == "impl"]
+        assert len(impl_symbols) == 1
+        assert impl_symbols[0].name == "Config"
+
+        # Should also extract the impl method
+        method_symbols = [s for s in symbols if s.symbol_type == "method"]
+        assert len(method_symbols) >= 1
+        new_method = next((s for s in method_symbols if s.name == "new"), None)
+        assert new_method is not None
+        assert new_method.parent == "Config"
+        assert new_method.docstring == "Create new config."
+
+    def test_extract_rust_impl_trait_for_type(self, tmp_path: Path):
+        """Verify impl Trait for Type is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('trait Display {}\nstruct Point {}\n\nimpl Display for Point {}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the impl block with trait info
+        impl_symbols = [s for s in symbols if s.symbol_type == "impl"]
+        trait_impl = next((s for s in impl_symbols if "Display" in s.name), None)
+        assert trait_impl is not None
+        assert trait_impl.metadata["trait"] == "Display"
+        assert trait_impl.metadata["self_type"] == "Point"
+
+    def test_extract_rust_const(self, tmp_path: Path):
+        """Verify Rust const is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// Maximum value.\npub const MAX_VALUE: usize = 100;')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the const
+        const_symbols = [s for s in symbols if s.symbol_type == "constant"]
+        assert len(const_symbols) == 1
+        assert const_symbols[0].name == "MAX_VALUE"
+        assert const_symbols[0].docstring == "Maximum value."
+        assert const_symbols[0].metadata["const_type"] == "usize"
+
+    def test_extract_rust_static(self, tmp_path: Path):
+        """Verify Rust static is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// Global counter.\npub static mut COUNTER: i32 = 0;')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the static
+        static_symbols = [s for s in symbols if s.symbol_type == "static"]
+        assert len(static_symbols) == 1
+        assert static_symbols[0].name == "COUNTER"
+        assert static_symbols[0].docstring == "Global counter."
+        assert static_symbols[0].metadata["is_mutable"] is True
+
+    def test_extract_rust_type_alias(self, tmp_path: Path):
+        """Verify Rust type alias is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// Result alias.\npub type Result<T> = std::result::Result<T, Error>;')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the type alias
+        type_symbols = [s for s in symbols if s.symbol_type == "type_alias"]
+        assert len(type_symbols) == 1
+        assert type_symbols[0].name == "Result"
+
+    def test_extract_rust_macro(self, tmp_path: Path):
+        """Verify Rust macro_rules is extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/// A logging macro.\n#[macro_export]\nmacro_rules! log {\n    ($msg:expr) => { println!("{}", $msg) };\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        # Should extract the macro
+        macro_symbols = [s for s in symbols if s.symbol_type == "macro"]
+        assert len(macro_symbols) == 1
+        assert macro_symbols[0].name == "log"
+        assert macro_symbols[0].docstring == "A logging macro."
+        assert macro_symbols[0].metadata["is_exported"] is True
+
+    def test_extract_rust_async_function(self, tmp_path: Path):
+        """Verify async function metadata is captured."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('pub async fn fetch(url: &str) -> String {\n    String::new()\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        func_symbols = [s for s in symbols if s.symbol_type == "function"]
+        assert len(func_symbols) >= 1
+        fetch_func = next((s for s in func_symbols if s.name == "fetch"), None)
+        assert fetch_func is not None
+        assert fetch_func.metadata["is_async"] is True
+
+    def test_extract_rust_unsafe_function(self, tmp_path: Path):
+        """Verify unsafe function metadata is captured."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('pub unsafe fn dangerous() {}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        func_symbols = [s for s in symbols if s.symbol_type == "function"]
+        assert len(func_symbols) >= 1
+        dangerous_func = next((s for s in func_symbols if s.name == "dangerous"), None)
+        assert dangerous_func is not None
+        assert dangerous_func.metadata["is_unsafe"] is True
+
+    def test_extract_rust_generics(self, tmp_path: Path):
+        """Verify generic parameters are captured."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('pub fn process<T: Clone>(data: T) -> T {\n    data\n}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        func_symbols = [s for s in symbols if s.symbol_type == "function"]
+        process_func = next((s for s in func_symbols if s.name == "process"), None)
+        assert process_func is not None
+        assert "T: Clone" in process_func.metadata["generics"] or "T" in str(process_func.metadata["generics"])
+
+    def test_extract_rust_lifetimes(self, tmp_path: Path):
+        """Verify lifetime parameters are captured."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text("pub fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {\n    x\n}")
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        func_symbols = [s for s in symbols if s.symbol_type == "function"]
+        longest_func = next((s for s in func_symbols if s.name == "longest"), None)
+        assert longest_func is not None
+        assert "'a" in longest_func.metadata["lifetimes"]
+
+    def test_get_symbol_context(self):
+        """Verify get_symbol_context formats Rust symbols correctly."""
+        loader = RustCodeLoader()
+        symbol = CodeSymbol(
+            name="process",
+            qualified_name="process",
+            symbol_type="function",
+            content="pub fn process(x: i32) -> i32 { x }",
+            docstring="Process a value.",
+            signature="pub fn process(x: i32) -> i32",
+            line_start=1,
+            line_end=1,
+            parent=None,
+            visibility="pub",
+            language="rust",
+        )
+
+        context = loader.get_symbol_context(symbol)
+
+        assert "process" in context
+        assert "Process a value." in context
+
+    def test_extract_block_doc_comment(self, tmp_path: Path):
+        """Verify block doc comments are extracted."""
+        loader = RustCodeLoader()
+        test_file = tmp_path / "test.rs"
+        test_file.write_text('/**\n * Block doc comment.\n */\npub fn documented() {}')
+
+        doc = loader.load(test_file)
+        symbols = doc.metadata["symbols"]
+
+        func_symbols = [s for s in symbols if s.symbol_type == "function"]
+        documented_func = next((s for s in func_symbols if s.name == "documented"), None)
+        assert documented_func is not None
+        assert "Block doc comment" in documented_func.docstring
+
+
 class TestCodeLoaderIntegration:
     """Integration tests for code_loaders package."""
 
     def test_import_all_from_package(self):
         """Verify all exports can be imported from package."""
-        from qdrant_indexer.code_loaders import CodeLoader, PHPCodeLoader, PythonCodeLoader
+        from qdrant_indexer.code_loaders import (
+            CodeLoader,
+            PHPCodeLoader,
+            PythonCodeLoader,
+            RustCodeLoader,
+        )
 
         assert CodeLoader is not None
         assert PythonCodeLoader is not None
         assert PHPCodeLoader is not None
+        assert RustCodeLoader is not None
 
     def test_python_and_php_loaders_coexist(self, tmp_path: Path):
         """Verify both loaders can be used simultaneously."""
@@ -313,3 +611,29 @@ class TestCodeLoaderIntegration:
         assert php_doc.metadata["is_code"] is True
         assert py_doc.metadata["extension"] == ".py"
         assert php_doc.metadata["extension"] == ".php"
+
+    def test_all_loaders_coexist(self, tmp_path: Path):
+        """Verify all loaders can be used simultaneously."""
+        py_loader = PythonCodeLoader()
+        php_loader = PHPCodeLoader()
+        rust_loader = RustCodeLoader()
+
+        py_file = tmp_path / "test.py"
+        py_file.write_text("def test(): pass")
+
+        php_file = tmp_path / "test.php"
+        php_file.write_text("<?php\nfunction test() {}")
+
+        rust_file = tmp_path / "test.rs"
+        rust_file.write_text("fn test() {}")
+
+        py_doc = py_loader.load(py_file)
+        php_doc = php_loader.load(php_file)
+        rust_doc = rust_loader.load(rust_file)
+
+        assert py_doc.metadata["is_code"] is True
+        assert php_doc.metadata["is_code"] is True
+        assert rust_doc.metadata["is_code"] is True
+        assert py_doc.metadata["extension"] == ".py"
+        assert php_doc.metadata["extension"] == ".php"
+        assert rust_doc.metadata["extension"] == ".rs"

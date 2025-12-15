@@ -1,0 +1,1002 @@
+"""Rust source code loader using tree-sitter parsing."""
+
+import logging
+from pathlib import Path
+
+import tree_sitter_rust
+from tree_sitter import Language, Parser
+
+from qdrant_indexer.models import CodeSymbol
+
+from .base import CodeLoader
+
+logger = logging.getLogger(__name__)
+
+
+class RustCodeLoader(CodeLoader):
+    """Loader for Rust source files using tree-sitter.
+
+    Extracts functions, structs, enums, traits, impl blocks, methods,
+    type aliases, constants, statics, and macros from Rust source code.
+    Also extracts doc comments (/// and /** */).
+    """
+
+    def __init__(self) -> None:
+        """Initialize the Rust parser with tree-sitter."""
+        self._rust_lang = Language(tree_sitter_rust.language())
+        self._parser = Parser(self._rust_lang)
+
+    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:
+        """Extract symbols using tree-sitter Rust parser.
+
+        Args:
+            content: Rust source code as string.
+            file_path: Path to source file for error reporting.
+
+        Returns:
+            List of extracted CodeSymbol objects.
+        """
+        content_bytes = content.encode("utf-8")
+        tree = self._parser.parse(content_bytes)
+        symbols: list[CodeSymbol] = []
+
+        # Walk the tree to find symbols
+        self._walk_node(tree.root_node, content_bytes, symbols, None)
+
+        return symbols
+
+    def _walk_node(
+        self,
+        node,
+        content_bytes: bytes,
+        symbols: list[CodeSymbol],
+        parent_name: str | None,
+    ) -> None:
+        """Recursively walk AST nodes to extract symbols.
+
+        Args:
+            node: Tree-sitter node to process.
+            content_bytes: Source code as bytes.
+            symbols: List to append extracted symbols to.
+            parent_name: Name of parent impl/trait if inside one.
+        """
+        if node.type == "function_item":
+            symbols.append(
+                self._extract_function(node, content_bytes, parent_name)
+            )
+
+        elif node.type == "struct_item":
+            symbols.append(self._extract_struct(node, content_bytes))
+
+        elif node.type == "enum_item":
+            symbols.append(self._extract_enum(node, content_bytes))
+
+        elif node.type == "trait_item":
+            trait_symbol = self._extract_trait(node, content_bytes)
+            symbols.append(trait_symbol)
+            # Process methods inside trait
+            self._extract_trait_methods(node, content_bytes, symbols, trait_symbol.name)
+
+        elif node.type == "impl_item":
+            impl_symbol = self._extract_impl(node, content_bytes)
+            symbols.append(impl_symbol)
+            # Process methods inside impl
+            self._extract_impl_methods(node, content_bytes, symbols, impl_symbol.name)
+
+        elif node.type == "type_item":
+            symbols.append(self._extract_type_alias(node, content_bytes))
+
+        elif node.type == "const_item":
+            symbols.append(self._extract_const(node, content_bytes))
+
+        elif node.type == "static_item":
+            symbols.append(self._extract_static(node, content_bytes))
+
+        elif node.type == "macro_definition":
+            symbols.append(self._extract_macro(node, content_bytes))
+
+        elif node.type == "mod_item":
+            # Handle inline modules
+            mod_symbol = self._extract_module(node, content_bytes)
+            if mod_symbol:
+                symbols.append(mod_symbol)
+                # Process items inside inline module
+                body = node.child_by_field_name("body")
+                if body:
+                    for child in body.children:
+                        self._walk_node(child, content_bytes, symbols, mod_symbol.name)
+                    return  # Don't recurse again below
+
+        else:
+            # Recurse into children for other node types
+            for child in node.children:
+                self._walk_node(child, content_bytes, symbols, parent_name)
+
+    def _get_node_text(self, node, content_bytes: bytes) -> str:
+        """Get text content of a node.
+
+        Args:
+            node: Tree-sitter node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            Node text content.
+        """
+        if node is None:
+            return ""
+        return content_bytes[node.start_byte : node.end_byte].decode("utf-8")
+
+    def _extract_doc_comment(self, node, content_bytes: bytes) -> str | None:
+        """Extract doc comment above a node.
+
+        Handles both /// line comments and /** */ block comments.
+
+        Args:
+            node: The node to find doc comment for.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            Cleaned doc comment content or None if not found.
+        """
+        doc_lines = []
+        prev = node.prev_sibling
+
+        while prev:
+            if prev.type == "line_comment":
+                comment_text = self._get_node_text(prev, content_bytes)
+                if comment_text.startswith("///"):
+                    # Doc comment - add to front (we're going backwards)
+                    doc_lines.insert(0, comment_text[3:].strip())
+                elif comment_text.startswith("//!"):
+                    # Inner doc comment - also capture
+                    doc_lines.insert(0, comment_text[3:].strip())
+                else:
+                    # Regular comment, stop here
+                    break
+            elif prev.type == "block_comment":
+                comment_text = self._get_node_text(prev, content_bytes)
+                if comment_text.startswith("/**") and not comment_text.startswith("/**/"):
+                    return self._clean_block_doc(comment_text)
+                elif comment_text.startswith("/*!"):
+                    return self._clean_block_doc(comment_text)
+                else:
+                    break
+            elif prev.type == "attribute_item" or prev.type == "inner_attribute_item":
+                # Skip attributes, they can be between doc and item
+                prev = prev.prev_sibling
+                continue
+            else:
+                break
+            prev = prev.prev_sibling
+
+        return "\n".join(doc_lines) if doc_lines else None
+
+    def _clean_block_doc(self, comment: str) -> str:
+        """Clean up block doc comment formatting.
+
+        Args:
+            comment: Raw block comment including delimiters.
+
+        Returns:
+            Cleaned content without comment markers.
+        """
+        # Remove /** or /*! prefix and */ suffix
+        if comment.startswith("/**"):
+            comment = comment[3:]
+        elif comment.startswith("/*!"):
+            comment = comment[3:]
+        if comment.endswith("*/"):
+            comment = comment[:-2]
+
+        lines = comment.split("\n")
+        cleaned = []
+        for line in lines:
+            line = line.strip()
+            # Remove leading asterisk common in block comments
+            if line.startswith("*"):
+                line = line[1:].strip()
+            if line:
+                cleaned.append(line)
+        return "\n".join(cleaned)
+
+    def _extract_visibility(self, node, content_bytes: bytes) -> str:
+        """Extract visibility modifier from a node.
+
+        Args:
+            node: Node that may have visibility modifier.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            Visibility string: 'pub', 'pub(crate)', 'pub(super)', etc., or 'private'.
+        """
+        for child in node.children:
+            if child.type == "visibility_modifier":
+                vis_text = self._get_node_text(child, content_bytes)
+                return vis_text
+        return "private"
+
+    def _extract_attributes(self, node, content_bytes: bytes) -> list[str]:
+        """Extract attributes from preceding siblings.
+
+        Args:
+            node: Node to find attributes for.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            List of attribute strings (e.g., ['#[derive(Debug)]', '#[cfg(test)]']).
+        """
+        attributes = []
+        prev = node.prev_sibling
+
+        while prev:
+            if prev.type == "attribute_item":
+                attr_text = self._get_node_text(prev, content_bytes)
+                attributes.insert(0, attr_text)
+            elif prev.type == "line_comment" or prev.type == "block_comment":
+                # Skip comments between attributes
+                prev = prev.prev_sibling
+                continue
+            else:
+                break
+            prev = prev.prev_sibling
+
+        return attributes
+
+    def _parse_derives(self, attributes: list[str]) -> list[str]:
+        """Parse derive macros from attributes.
+
+        Args:
+            attributes: List of attribute strings.
+
+        Returns:
+            List of derived trait names.
+        """
+        derives = []
+        for attr in attributes:
+            if "derive(" in attr:
+                # Extract content between derive( and )
+                start = attr.find("derive(") + 7
+                end = attr.find(")", start)
+                if end > start:
+                    derive_content = attr[start:end]
+                    # Split by comma and clean up
+                    for item in derive_content.split(","):
+                        item = item.strip()
+                        if item:
+                            derives.append(item)
+        return derives
+
+    def _extract_generics(self, node, content_bytes: bytes) -> tuple[list[str], list[str], str | None]:
+        """Extract generic parameters, lifetimes, and where clause.
+
+        Args:
+            node: Node that may have generics.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            Tuple of (generics, lifetimes, where_clause).
+        """
+        generics = []
+        lifetimes = []
+        where_clause = None
+
+        type_params = node.child_by_field_name("type_parameters")
+        if type_params:
+            for child in type_params.children:
+                if child.type == "type_parameter":
+                    # type_parameter contains type_identifier and optional trait_bounds
+                    generics.append(self._get_node_text(child, content_bytes))
+                elif child.type == "constrained_type_parameter":
+                    generics.append(self._get_node_text(child, content_bytes))
+                elif child.type == "lifetime_parameter":
+                    # lifetime_parameter contains a lifetime node
+                    lifetimes.append(self._get_node_text(child, content_bytes))
+                elif child.type == "lifetime":
+                    # Direct lifetime (less common)
+                    lifetimes.append(self._get_node_text(child, content_bytes))
+
+        # Find where clause
+        for child in node.children:
+            if child.type == "where_clause":
+                where_clause = self._get_node_text(child, content_bytes)
+                # Clean up the where clause
+                if where_clause.startswith("where"):
+                    where_clause = where_clause[5:].strip()
+                break
+
+        return generics, lifetimes, where_clause
+
+    def _extract_function(
+        self, node, content_bytes: bytes, parent_name: str | None
+    ) -> CodeSymbol:
+        """Extract function symbol.
+
+        Args:
+            node: Function item node.
+            content_bytes: Source code as bytes.
+            parent_name: Parent impl/trait name if this is a method.
+
+        Returns:
+            CodeSymbol representing the function.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+
+        # Check for async/unsafe/const in function_modifiers
+        is_async = False
+        is_unsafe = False
+        is_const = False
+        for child in node.children:
+            if child.type == "function_modifiers":
+                for modifier in child.children:
+                    if modifier.type == "async":
+                        is_async = True
+                    elif modifier.type == "unsafe":
+                        is_unsafe = True
+                    elif modifier.type == "const":
+                        is_const = True
+
+        # Build signature
+        signature = self._build_function_signature(node, content_bytes, visibility, is_async, is_unsafe, is_const)
+
+        qualified_name = f"{parent_name}.{name}" if parent_name else name
+        symbol_type = "method" if parent_name else "function"
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=qualified_name,
+            symbol_type=symbol_type,
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=parent_name,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "is_async": is_async,
+                "is_unsafe": is_unsafe,
+                "is_const": is_const,
+                "generics": generics,
+                "lifetimes": lifetimes,
+                "where_clause": where_clause,
+                "attributes": attributes,
+            },
+        )
+
+    def _build_function_signature(
+        self, node, content_bytes: bytes, visibility: str, is_async: bool, is_unsafe: bool, is_const: bool
+    ) -> str:
+        """Build function signature string.
+
+        Args:
+            node: Function item node.
+            content_bytes: Source code as bytes.
+            visibility: Visibility modifier.
+            is_async: Whether function is async.
+            is_unsafe: Whether function is unsafe.
+            is_const: Whether function is const.
+
+        Returns:
+            Function signature string.
+        """
+        parts = []
+
+        if visibility != "private":
+            parts.append(visibility)
+        if is_const:
+            parts.append("const")
+        if is_async:
+            parts.append("async")
+        if is_unsafe:
+            parts.append("unsafe")
+        parts.append("fn")
+
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+        parts.append(name)
+
+        # Add type parameters
+        type_params = node.child_by_field_name("type_parameters")
+        if type_params:
+            parts[-1] += self._get_node_text(type_params, content_bytes)
+
+        # Add parameters
+        params_node = node.child_by_field_name("parameters")
+        params = self._get_node_text(params_node, content_bytes) or "()"
+        parts[-1] += params
+
+        # Add return type
+        return_type = node.child_by_field_name("return_type")
+        if return_type:
+            parts.append("->")
+            parts.append(self._get_node_text(return_type, content_bytes))
+
+        return " ".join(parts)
+
+    def _extract_struct(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract struct symbol.
+
+        Args:
+            node: Struct item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the struct.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+        derives = self._parse_derives(attributes)
+        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("struct")
+        sig_parts.append(name)
+
+        type_params = node.child_by_field_name("type_parameters")
+        if type_params:
+            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="struct",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "derives": derives,
+                "generics": generics,
+                "lifetimes": lifetimes,
+                "where_clause": where_clause,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_enum(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract enum symbol.
+
+        Args:
+            node: Enum item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the enum.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+        derives = self._parse_derives(attributes)
+        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+
+        # Extract variant names
+        variants = []
+        body = node.child_by_field_name("body")
+        if body:
+            for child in body.children:
+                if child.type == "enum_variant":
+                    variant_name = child.child_by_field_name("name")
+                    if variant_name:
+                        variants.append(self._get_node_text(variant_name, content_bytes))
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("enum")
+        sig_parts.append(name)
+
+        type_params = node.child_by_field_name("type_parameters")
+        if type_params:
+            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="enum",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "derives": derives,
+                "variants": variants,
+                "generics": generics,
+                "lifetimes": lifetimes,
+                "where_clause": where_clause,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_trait(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract trait symbol.
+
+        Args:
+            node: Trait item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the trait.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+
+        # Extract supertraits
+        supertraits = []
+        bounds = node.child_by_field_name("bounds")
+        if bounds:
+            supertraits.append(self._get_node_text(bounds, content_bytes))
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("trait")
+        sig_parts.append(name)
+
+        type_params = node.child_by_field_name("type_parameters")
+        if type_params:
+            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
+
+        if supertraits:
+            sig_parts.append(":")
+            sig_parts.append(" + ".join(supertraits))
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="trait",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "supertraits": supertraits,
+                "generics": generics,
+                "lifetimes": lifetimes,
+                "where_clause": where_clause,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_trait_methods(
+        self, node, content_bytes: bytes, symbols: list[CodeSymbol], trait_name: str
+    ) -> None:
+        """Extract methods from a trait definition.
+
+        Args:
+            node: Trait item node.
+            content_bytes: Source code as bytes.
+            symbols: List to append extracted symbols to.
+            trait_name: Name of the containing trait.
+        """
+        body = node.child_by_field_name("body")
+        if not body:
+            return
+
+        for child in body.children:
+            if child.type == "function_item" or child.type == "function_signature_item":
+                symbols.append(self._extract_function(child, content_bytes, trait_name))
+
+    def _extract_impl(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract impl block symbol.
+
+        Args:
+            node: Impl item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the impl block.
+        """
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+
+        # Extract self type and trait (if impl Trait for Type)
+        self_type = None
+        trait_name = None
+
+        type_node = node.child_by_field_name("type")
+        if type_node:
+            self_type = self._get_node_text(type_node, content_bytes)
+
+        trait_node = node.child_by_field_name("trait")
+        if trait_node:
+            trait_name = self._get_node_text(trait_node, content_bytes)
+
+        # Check for unsafe impl
+        is_unsafe = False
+        for child in node.children:
+            if child.type == "unsafe":
+                is_unsafe = True
+                break
+
+        # Build name and signature
+        if trait_name:
+            name = f"{trait_name} for {self_type}"
+            signature = f"impl {trait_name} for {self_type}"
+        else:
+            name = self_type or "impl"
+            signature = f"impl {self_type}"
+
+        if is_unsafe:
+            signature = "unsafe " + signature
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="impl",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility="private",  # impl blocks don't have visibility
+            language="rust",
+            metadata={
+                "self_type": self_type,
+                "trait": trait_name,
+                "is_unsafe": is_unsafe,
+                "generics": generics,
+                "lifetimes": lifetimes,
+                "where_clause": where_clause,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_impl_methods(
+        self, node, content_bytes: bytes, symbols: list[CodeSymbol], impl_name: str
+    ) -> None:
+        """Extract methods from an impl block.
+
+        Args:
+            node: Impl item node.
+            content_bytes: Source code as bytes.
+            symbols: List to append extracted symbols to.
+            impl_name: Name of the containing impl (usually the self type).
+        """
+        body = node.child_by_field_name("body")
+        if not body:
+            return
+
+        # Use self_type as parent for methods
+        type_node = node.child_by_field_name("type")
+        parent_name = self._get_node_text(type_node, content_bytes) if type_node else impl_name
+
+        for child in body.children:
+            if child.type == "function_item":
+                symbols.append(self._extract_function(child, content_bytes, parent_name))
+
+    def _extract_type_alias(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract type alias symbol.
+
+        Args:
+            node: Type item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the type alias.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+
+        # Get the aliased type
+        type_node = node.child_by_field_name("type")
+        aliased_type = self._get_node_text(type_node, content_bytes) if type_node else None
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("type")
+        sig_parts.append(name)
+
+        type_params = node.child_by_field_name("type_parameters")
+        if type_params:
+            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
+
+        if aliased_type:
+            sig_parts.append("=")
+            sig_parts.append(aliased_type)
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="type_alias",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "aliased_type": aliased_type,
+                "generics": generics,
+                "lifetimes": lifetimes,
+                "where_clause": where_clause,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_const(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract const item symbol.
+
+        Args:
+            node: Const item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the constant.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "UNKNOWN"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+
+        # Get type
+        type_node = node.child_by_field_name("type")
+        const_type = self._get_node_text(type_node, content_bytes) if type_node else None
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("const")
+        sig_parts.append(f"{name}:")
+        if const_type:
+            sig_parts.append(const_type)
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="constant",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "const_type": const_type,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_static(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract static item symbol.
+
+        Args:
+            node: Static item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the static.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "UNKNOWN"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+
+        # Check for mutable static
+        is_mutable = False
+        for child in node.children:
+            if child.type == "mutable_specifier":
+                is_mutable = True
+                break
+
+        # Get type
+        type_node = node.child_by_field_name("type")
+        static_type = self._get_node_text(type_node, content_bytes) if type_node else None
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("static")
+        if is_mutable:
+            sig_parts.append("mut")
+        sig_parts.append(f"{name}:")
+        if static_type:
+            sig_parts.append(static_type)
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="static",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "static_type": static_type,
+                "is_mutable": is_mutable,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_macro(self, node, content_bytes: bytes) -> CodeSymbol:
+        """Extract macro_rules! definition.
+
+        Args:
+            node: Macro definition node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the macro.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+
+        # Check for macro_export
+        is_exported = any("#[macro_export]" in attr for attr in attributes)
+
+        signature = f"macro_rules! {name}"
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="macro",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility="pub" if is_exported else "private",
+            language="rust",
+            metadata={
+                "is_exported": is_exported,
+                "attributes": attributes,
+            },
+        )
+
+    def _extract_module(self, node, content_bytes: bytes) -> CodeSymbol | None:
+        """Extract inline module.
+
+        Args:
+            node: Mod item node.
+            content_bytes: Source code as bytes.
+
+        Returns:
+            CodeSymbol representing the module, or None if it's an external mod declaration.
+        """
+        name_node = node.child_by_field_name("name")
+        name = self._get_node_text(name_node, content_bytes) or "unknown"
+
+        # Check if this is an inline module (has body) vs external mod declaration
+        body = node.child_by_field_name("body")
+        if not body:
+            # External mod declaration like `mod utils;` - skip
+            return None
+
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes)
+        attributes = self._extract_attributes(node, content_bytes)
+
+        # Build signature
+        sig_parts = []
+        if visibility != "private":
+            sig_parts.append(visibility)
+        sig_parts.append("mod")
+        sig_parts.append(name)
+
+        signature = " ".join(sig_parts)
+
+        return CodeSymbol(
+            name=name,
+            qualified_name=name,
+            symbol_type="module",
+            content=source,
+            docstring=docstring,
+            signature=signature,
+            line_start=node.start_point[0] + 1,
+            line_end=node.end_point[0] + 1,
+            parent=None,
+            visibility=visibility,
+            language="rust",
+            metadata={
+                "attributes": attributes,
+            },
+        )
+
+    def get_symbol_context(self, symbol: CodeSymbol) -> str:
+        """Format symbol for embedding.
+
+        Args:
+            symbol: The code symbol to format.
+
+        Returns:
+            Formatted context string for embedding.
+        """
+        parts = []
+
+        # Include visibility for Rust
+        if symbol.visibility and symbol.visibility != "private":
+            parts.append(f"{symbol.visibility} {symbol.symbol_type}: {symbol.qualified_name}")
+        else:
+            parts.append(f"{symbol.symbol_type}: {symbol.qualified_name}")
+
+        if symbol.signature:
+            parts.append(symbol.signature)
+
+        if symbol.docstring:
+            parts.append(f"\n{symbol.docstring}")
+
+        return "\n".join(parts)
