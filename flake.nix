@@ -54,6 +54,31 @@
         sourcePreference = "wheel";
       };
 
+      # Overlay to patch pymupdf packages with mupdf libraries
+      # pymupdf-layout expects libmupdf.so.26.11 but nixpkgs has 1.26.10
+      # We ignore these missing deps since pymupdf bundles compatible libraries at runtime
+      mkMupdfOverlay = pkgs: final: prev: {
+        pymupdf = prev.pymupdf.overrideAttrs (old: {
+          buildInputs = (old.buildInputs or [ ]) ++ [
+            pkgs.mupdf
+          ];
+          autoPatchelfIgnoreMissingDeps = (old.autoPatchelfIgnoreMissingDeps or [ ]) ++ [
+            "libmupdf.so.26.11"
+            "libmupdfcpp.so.26.11"
+          ];
+        });
+        pymupdf-layout = prev.pymupdf-layout.overrideAttrs (old: {
+          buildInputs = (old.buildInputs or [ ]) ++ [
+            pkgs.mupdf
+            final.pymupdf  # Get libraries from pymupdf
+          ];
+          autoPatchelfIgnoreMissingDeps = (old.autoPatchelfIgnoreMissingDeps or [ ]) ++ [
+            "libmupdf.so.26.11"
+            "libmupdfcpp.so.26.11"
+          ];
+        });
+      };
+
       editableOverlay = workspace.mkEditablePyprojectOverlay {
         root = "$REPO_ROOT";
       };
@@ -72,6 +97,7 @@
             lib.composeManyExtensions [
               pyproject-build-systems.overlays.wheel
               overlay
+              (mkMupdfOverlay pkgs)
             ]
           )
       );
@@ -116,6 +142,7 @@
             lib.composeManyExtensions [
               pyproject-build-systems.overlays.wheel
               overlay
+              (mkMupdfOverlay pkgs)
               cudaOverlay
             ]
           )

@@ -186,6 +186,83 @@ class TestLoaderFactory:
             assert isinstance(loader, PHPCodeLoader), f"Failed for extension {ext}"
 
 
+class TestPDFLoaderHelpers:
+    """Tests for PDFLoader helper methods."""
+
+    def test_parse_pdf_date_standard_format(self):
+        """Test parsing standard PDF date format."""
+        loader = PDFLoader()
+        # Standard PDF date: D:YYYYMMDDHHmmSS
+        result = loader._parse_pdf_date("D:20231215143022")
+        assert result == "2023-12-15"
+
+    def test_parse_pdf_date_without_prefix(self):
+        """Test parsing PDF date without D: prefix."""
+        loader = PDFLoader()
+        result = loader._parse_pdf_date("20231215143022")
+        assert result == "2023-12-15"
+
+    def test_parse_pdf_date_with_timezone(self):
+        """Test parsing PDF date with timezone."""
+        loader = PDFLoader()
+        # With timezone: D:YYYYMMDDHHmmSS+HH'mm'
+        result = loader._parse_pdf_date("D:20231215143022+01'00'")
+        assert result == "2023-12-15"
+
+    def test_parse_pdf_date_empty(self):
+        """Test parsing empty date returns None."""
+        loader = PDFLoader()
+        assert loader._parse_pdf_date("") is None
+        assert loader._parse_pdf_date(None) is None
+
+    def test_parse_pdf_date_short_string(self):
+        """Test parsing too-short date returns None."""
+        loader = PDFLoader()
+        assert loader._parse_pdf_date("2023") is None
+
+    def test_extract_doi_standard_format(self):
+        """Test extracting DOI in standard format."""
+        loader = PDFLoader()
+        text = "This paper has doi:10.1234/example.2023"
+        result = loader._extract_doi(text)
+        assert result == "10.1234/example.2023"
+
+    def test_extract_doi_with_url(self):
+        """Test extracting DOI from doi.org URL."""
+        loader = PDFLoader()
+        text = "Available at https://doi.org/10.5678/journal.abc.123"
+        result = loader._extract_doi(text)
+        assert result == "10.5678/journal.abc.123"
+
+    def test_extract_doi_dx_url(self):
+        """Test extracting DOI from dx.doi.org URL."""
+        loader = PDFLoader()
+        text = "Link: http://dx.doi.org/10.9999/paper.ref"
+        result = loader._extract_doi(text)
+        assert result == "10.9999/paper.ref"
+
+    def test_extract_doi_uppercase(self):
+        """Test extracting DOI with uppercase DOI prefix."""
+        loader = PDFLoader()
+        text = "DOI: 10.1234/UPPERCASE"
+        result = loader._extract_doi(text)
+        assert result == "10.1234/UPPERCASE"
+
+    def test_extract_doi_strips_trailing_punctuation(self):
+        """Test that trailing punctuation is stripped from DOI."""
+        loader = PDFLoader()
+        text = "See doi:10.1234/example, for more info."
+        result = loader._extract_doi(text)
+        assert result == "10.1234/example"
+
+    def test_extract_doi_not_found(self):
+        """Test returns None when no DOI present."""
+        loader = PDFLoader()
+        text = "This document has no DOI reference."
+        result = loader._extract_doi(text)
+        assert result is None
+
+
 class TestLoadersRegistry:
     """Tests for LOADERS registry."""
 

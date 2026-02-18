@@ -4,7 +4,7 @@ import hashlib
 import logging
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -75,6 +75,62 @@ DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
 
 # Default batch size for embedding - smaller batches use less GPU memory
 DEFAULT_EMBEDDING_BATCH_SIZE = 64
+
+# PDF extensions that need process-based parallelism (PyMuPDF is not thread-safe)
+PDF_EXTENSIONS = {".pdf"}
+
+
+def _load_pdf_file(args: tuple) -> dict:
+    """Load a PDF file in a separate process.
+
+    PyMuPDF is not thread-safe, so PDF files must be processed in separate
+    processes rather than threads. This function is designed to be called
+    via ProcessPoolExecutor.
+
+    Args:
+        args: Tuple of (file_path_str, chunk_size, overlap)
+
+    Returns:
+        Dict with 'file_path', 'chunks' (list of chunk dicts), and 'error'.
+    """
+    file_path_str, chunk_size, overlap = args
+    file_path = Path(file_path_str)
+
+    try:
+        # Import here to avoid issues with process spawning
+        from qdrant_indexer.chunkers import RecursiveChunker
+        from qdrant_indexer.loaders import PDFLoader
+
+        loader = PDFLoader()
+        doc = loader.load(file_path)
+
+        chunker = RecursiveChunker(chunk_size=chunk_size, overlap=overlap)
+        chunks = chunker.chunk(doc.content)
+
+        # Convert to serializable format
+        prepared_chunks = []
+        for i, chunk in enumerate(chunks):
+            prepared_chunks.append({
+                "text": chunk,
+                "file_path": str(file_path),
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "metadata": doc.metadata,
+                "symbol": None,
+            })
+
+        return {
+            "file_path": str(file_path),
+            "chunks": prepared_chunks,
+            "error": None,
+        }
+
+    except Exception as e:
+        return {
+            "file_path": str(file_path),
+            "chunks": [],
+            "error": str(e),
+        }
 
 
 @dataclass
@@ -624,7 +680,16 @@ class QdrantIndexer:
             )
 
         # Phase 1: Parallel file loading and chunking
+        # Separate PDF files (need ProcessPoolExecutor) from other files (ThreadPoolExecutor)
+        pdf_files = [f for f in files if f.suffix.lower() in PDF_EXTENSIONS]
+        other_files = [f for f in files if f.suffix.lower() not in PDF_EXTENSIONS]
+
         logger.info(f"Loading files with {workers} workers...")
+        if pdf_files:
+            logger.info(f"  {len(pdf_files)} PDF files (process pool)")
+        if other_files:
+            logger.info(f"  {len(other_files)} other files (thread pool)")
+
         if on_progress:
             on_progress("loading", 0, total_files_to_process, "Loading files...")
 
@@ -632,22 +697,21 @@ class QdrantIndexer:
         failed_files: list[str] = []
         files_loaded = 0
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            # Submit all file loading tasks
-            future_to_file = {
-                executor.submit(self._load_and_chunk_file, f, chunker): f
-                for f in files
-            }
+        # Get chunker settings for PDF process pool
+        chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 512
+        overlap = chunker.overlap if hasattr(chunker, "overlap") else 50
 
-            # Collect results as they complete
-            for future in as_completed(future_to_file):
-                file_path = future_to_file[future]
-                files_loaded += 1
+        # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
+        if pdf_files:
+            pdf_args = [(str(f), chunk_size, overlap) for f in pdf_files]
 
-                try:
-                    result = future.result()
-                    if result.error:
-                        failed_files.append(f"{result.file_path}: {result.error}")
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                for result in executor.map(_load_pdf_file, pdf_args):
+                    files_loaded += 1
+                    file_path = Path(result["file_path"])
+
+                    if result["error"]:
+                        failed_files.append(f"{file_path}: {result['error']}")
                         if on_progress:
                             on_progress(
                                 "file_error",
@@ -656,17 +720,64 @@ class QdrantIndexer:
                                 f"Failed: {file_path.name}",
                             )
                     else:
-                        loaded_files.append(result)
+                        # Convert dict chunks back to PreparedChunk objects
+                        chunks = [
+                            PreparedChunk(
+                                text=c["text"],
+                                file_path=Path(c["file_path"]),
+                                chunk_index=c["chunk_index"],
+                                total_chunks=c["total_chunks"],
+                                metadata=c["metadata"],
+                                symbol=c["symbol"],
+                            )
+                            for c in result["chunks"]
+                        ]
+                        loaded_files.append(LoadedFile(file_path=file_path, chunks=chunks))
                         if on_progress:
                             on_progress(
                                 "file_loaded",
                                 files_loaded,
                                 total_files_to_process,
-                                f"Loaded {file_path.name}: {len(result.chunks)} chunks",
+                                f"Loaded {file_path.name}: {len(chunks)} chunks",
                             )
-                except Exception as e:
-                    failed_files.append(f"{file_path}: {e}")
-                    logger.error(f"Failed to load {file_path}: {e}")
+
+        # Process other files with ThreadPoolExecutor
+        if other_files:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                # Submit all file loading tasks
+                future_to_file = {
+                    executor.submit(self._load_and_chunk_file, f, chunker): f
+                    for f in other_files
+                }
+
+                # Collect results as they complete
+                for future in as_completed(future_to_file):
+                    file_path = future_to_file[future]
+                    files_loaded += 1
+
+                    try:
+                        result = future.result()
+                        if result.error:
+                            failed_files.append(f"{result.file_path}: {result.error}")
+                            if on_progress:
+                                on_progress(
+                                    "file_error",
+                                    files_loaded,
+                                    total_files_to_process,
+                                    f"Failed: {file_path.name}",
+                                )
+                        else:
+                            loaded_files.append(result)
+                            if on_progress:
+                                on_progress(
+                                    "file_loaded",
+                                    files_loaded,
+                                    total_files_to_process,
+                                    f"Loaded {file_path.name}: {len(result.chunks)} chunks",
+                                )
+                    except Exception as e:
+                        failed_files.append(f"{file_path}: {e}")
+                        logger.error(f"Failed to load {file_path}: {e}")
 
         # Phase 2: Batch embedding across all files
         # Collect all chunks for efficient batch embedding

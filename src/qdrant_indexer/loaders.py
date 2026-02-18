@@ -6,6 +6,8 @@ from typing import ClassVar
 
 import frontmatter
 import fitz  # pymupdf
+import pymupdf.layout  # must be imported before pymupdf4llm to enable layout analysis
+import pymupdf4llm
 
 from qdrant_indexer.models import Document
 
@@ -64,31 +66,143 @@ class TextLoader(DocumentLoader):
 
 
 class PDFLoader(DocumentLoader):
-    """Loader for PDF files using pymupdf."""
+    """Loader for PDF files using pymupdf4llm for LLM-optimized extraction."""
+
+    # Standard PDF metadata keys to extract
+    PDF_METADATA_KEYS = [
+        ("title", "title"),
+        ("author", "author"),
+        ("subject", "subject"),
+        ("keywords", "keywords"),
+        ("creator", "creator"),
+        ("producer", "producer"),
+    ]
 
     def load(self, path: Path) -> Document:
-        """Load a PDF file, extracting text from all pages."""
+        """Load a PDF file, extracting text with proper table formatting.
+
+        Uses pymupdf4llm to convert PDF content to Markdown format,
+        which preserves table structure and document hierarchy.
+
+        Extracts available PDF metadata (title, author, subject, keywords,
+        creation date, etc.) when present.
+        """
+        md_text = pymupdf4llm.to_markdown(str(path))
+
         doc = fitz.open(path)
-        pages_text = []
-
-        for page_num, page in enumerate(doc, start=1):
-            text = page.get_text()
-            if text.strip():
-                pages_text.append(text)
-
-        content = "\n\n".join(pages_text)
         page_count = len(doc)
+        metadata = self._extract_metadata(doc, path)
         doc.close()
 
+        metadata["page_count"] = page_count
+
+        # Try to extract DOI from content if not in metadata
+        if "doi" not in metadata:
+            doi = self._extract_doi(md_text)
+            if doi:
+                metadata["doi"] = doi
+
         return Document(
-            content=content,
+            content=md_text,
             source_path=path,
-            metadata={
-                "filename": path.name,
-                "extension": path.suffix,
-                "page_count": page_count,
-            },
+            metadata=metadata,
         )
+
+    def _extract_metadata(self, doc: fitz.Document, path: Path) -> dict:
+        """Extract metadata from PDF document.
+
+        Args:
+            doc: Open PyMuPDF document.
+            path: Path to the PDF file.
+
+        Returns:
+            Dictionary of metadata with only non-empty values.
+        """
+        metadata: dict = {
+            "filename": path.name,
+            "extension": path.suffix,
+        }
+
+        # Extract standard PDF metadata
+        pdf_meta = doc.metadata
+        if pdf_meta:
+            for pdf_key, meta_key in self.PDF_METADATA_KEYS:
+                value = pdf_meta.get(pdf_key, "")
+                if value and value.strip():
+                    metadata[meta_key] = value.strip()
+
+            # Handle dates separately (may need parsing)
+            for date_key in ("creationDate", "modDate"):
+                date_value = pdf_meta.get(date_key, "")
+                if date_value and date_value.strip():
+                    parsed_date = self._parse_pdf_date(date_value)
+                    if parsed_date:
+                        metadata[date_key] = parsed_date
+
+        return metadata
+
+    def _parse_pdf_date(self, date_str: str) -> str | None:
+        """Parse PDF date format to ISO format.
+
+        PDF dates are typically in format: D:YYYYMMDDHHmmSS+HH'mm'
+
+        Args:
+            date_str: PDF date string.
+
+        Returns:
+            ISO formatted date string or None if parsing fails.
+        """
+        if not date_str:
+            return None
+
+        # Remove 'D:' prefix if present
+        if date_str.startswith("D:"):
+            date_str = date_str[2:]
+
+        # Try to extract at least the date portion (YYYYMMDD)
+        try:
+            if len(date_str) >= 8:
+                year = date_str[0:4]
+                month = date_str[4:6]
+                day = date_str[6:8]
+                return f"{year}-{month}-{day}"
+        except (ValueError, IndexError):
+            pass
+
+        return None
+
+    def _extract_doi(self, text: str) -> str | None:
+        """Extract DOI from document text.
+
+        Looks for common DOI patterns in the document content.
+
+        Args:
+            text: Document text content.
+
+        Returns:
+            DOI string or None if not found.
+        """
+        import re
+
+        # Common DOI patterns:
+        # - doi:10.xxxx/xxxxx
+        # - DOI: 10.xxxx/xxxxx
+        # - https://doi.org/10.xxxx/xxxxx
+        # - http://dx.doi.org/10.xxxx/xxxxx
+        patterns = [
+            r"(?:https?://)?(?:dx\.)?doi\.org/(10\.\d{4,}/[^\s]+)",
+            r"[Dd][Oo][Ii][:：]?\s*(10\.\d{4,}/[^\s]+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                doi = match.group(1)
+                # Clean up trailing punctuation
+                doi = doi.rstrip(".,;:")
+                return doi
+
+        return None
 
 
 class ReStructuredTextLoader(DocumentLoader):
