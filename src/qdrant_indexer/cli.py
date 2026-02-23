@@ -72,7 +72,7 @@ def index(
     embedding_model: Annotated[str, typer.Option("--embedding-model", "-m", help="FastEmbed model for embeddings")] = DEFAULT_EMBEDDING_MODEL,
     chunk_size: Annotated[int, typer.Option("--chunk-size", help="Chunk size in characters")] = 512,
     chunk_overlap: Annotated[int, typer.Option("--chunk-overlap", help="Overlap between chunks")] = 50,
-    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"],
+    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php", "**/*.html", "**/*.htm"],
     batch_size: Annotated[int, typer.Option("--batch-size", help="Batch size for uploads")] = 100,
     exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
@@ -319,7 +319,7 @@ def index(
 def status(
     path: Annotated[Path, typer.Argument(help="Directory to check status for")],
     state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location")] = None,
-    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"],
+    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php", "**/*.html", "**/*.htm"],
     exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude")] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes")] = False,
 ) -> None:
