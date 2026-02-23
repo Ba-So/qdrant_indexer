@@ -239,13 +239,20 @@ class ReStructuredTextLoader(DocumentLoader):
 
 
 class HTMLLoader(DocumentLoader):
-    """Loader for HTML files with content cleaning and metadata extraction."""
+    """Loader for HTML files with content cleaning and metadata extraction.
+
+    Automatically detects and delegates to specialized doc loaders (e.g., RustdocLoader)
+    based on HTML content markers. See HTML_DOC_LOADERS registry.
+    """
 
     # Tags to remove for clean text extraction
     UNWANTED_TAGS = ["script", "style", "nav", "noscript", "iframe", "svg"]
 
     def load(self, path: Path) -> Document:
         """Load HTML file, extract metadata and clean text.
+
+        Automatically detects specialized documentation formats (rustdoc, etc.)
+        and delegates to the appropriate loader.
 
         Removes scripts, styles, navigation elements.
         Extracts metadata from <head> tags (title, description, keywords, author).
@@ -257,6 +264,25 @@ class HTMLLoader(DocumentLoader):
         # Parse with lxml parser (fast and handles malformed HTML)
         soup = BeautifulSoup(content, "lxml")
 
+        # Check for specialized doc loaders (imported at end of module to avoid circular refs)
+        for loader_cls in HTML_DOC_LOADERS:
+            if loader_cls.can_handle(soup):
+                return loader_cls()._load_from_soup(soup, path, stat)
+
+        # Default HTML processing
+        return self._load_from_soup(soup, path, stat)
+
+    def _load_from_soup(self, soup: BeautifulSoup, path: Path, stat) -> Document:
+        """Process parsed HTML soup into a Document.
+
+        Args:
+            soup: Parsed BeautifulSoup object.
+            path: Path to the source file.
+            stat: File stat result.
+
+        Returns:
+            Document with extracted content and metadata.
+        """
         # Extract metadata from <head>
         metadata = self._extract_metadata(soup, path, stat)
 
@@ -319,14 +345,17 @@ class RustdocLoader(HTMLLoader):
     # Additional rustdoc-specific classes to remove
     RUSTDOC_UNWANTED_CLASSES = ["sidebar", "search-form", "rustdoc-footer"]
 
-    def load(self, path: Path) -> Document:
-        """Load rustdoc HTML with Rust-specific metadata extraction."""
-        content = path.read_text(encoding="utf-8")
-        stat = path.stat()
+    @classmethod
+    def can_handle(cls, soup: BeautifulSoup) -> bool:
+        """Check if this HTML is rustdoc-generated.
 
-        # Parse with lxml
-        soup = BeautifulSoup(content, "lxml")
+        Detects rustdoc by looking for 'rustdoc' class on the body element.
+        """
+        body = soup.find("body")
+        return body is not None and "rustdoc" in body.get("class", [])
 
+    def _load_from_soup(self, soup: BeautifulSoup, path: Path, stat) -> Document:
+        """Process rustdoc HTML soup into a Document with Rust-specific metadata."""
         # Extract base metadata
         metadata = self._extract_metadata(soup, path, stat)
 
@@ -379,6 +408,15 @@ class RustdocLoader(HTMLLoader):
             source_path=path,
             metadata=metadata,
         )
+
+
+# Registry of specialized HTML doc loaders, checked in order by HTMLLoader.load()
+# Each loader must implement can_handle(soup) classmethod and _load_from_soup() method
+# To add a new doc type: create XxxdocLoader(HTMLLoader), implement can_handle(), add here
+HTML_DOC_LOADERS: list[type[HTMLLoader]] = [
+    RustdocLoader,
+    # Add more specialized loaders here (e.g., JavadocLoader, DoxygenLoader, SphinxLoader)
+]
 
 
 # Registry mapping file extensions to loader classes

@@ -415,3 +415,30 @@ class TestLoaderFactoryHTML:
         """Verify .htm returns HTMLLoader."""
         loader = get_loader(tmp_path / "test.htm")
         assert isinstance(loader, HTMLLoader)
+
+
+class TestHTMLDocAutoDetection:
+    """Tests for automatic detection of specialized HTML doc formats."""
+
+    def test_rustdoc_auto_detected_via_html_loader(self, sample_rustdoc_file: Path):
+        """Verify rustdoc HTML is auto-detected when loaded via HTMLLoader."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_rustdoc_file)
+        # Should have rustdoc-specific metadata even though we used HTMLLoader
+        assert doc.metadata.get("doc_type") == "rustdoc"
+        assert doc.metadata.get("module_path") == "my_crate::module::MyStruct"
+        assert doc.metadata.get("item_type") == "struct"
+
+    def test_rustdoc_auto_detected_via_get_loader(self, sample_rustdoc_file: Path):
+        """Verify rustdoc HTML is auto-detected when loaded via get_loader factory."""
+        loader = get_loader(sample_rustdoc_file)
+        doc = loader.load(sample_rustdoc_file)
+        # Should have rustdoc-specific metadata
+        assert doc.metadata.get("doc_type") == "rustdoc"
+        assert doc.metadata.get("module_path") == "my_crate::module::MyStruct"
+
+    def test_regular_html_no_doc_type(self, sample_html_file: Path):
+        """Verify regular HTML does not get doc_type set."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert "doc_type" not in doc.metadata
