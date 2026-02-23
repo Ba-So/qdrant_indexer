@@ -306,6 +306,81 @@ class HTMLLoader(DocumentLoader):
         return metadata
 
 
+class RustdocLoader(HTMLLoader):
+    """Specialized loader for rustdoc-generated HTML documentation.
+
+    Extends HTMLLoader with Rust-specific metadata extraction:
+    - module_path from .fqn element
+    - item_type from body class
+    - signature from .rust code block
+    - Additional filtering of .sidebar, .search-form, .rustdoc-footer
+    """
+
+    # Additional rustdoc-specific classes to remove
+    RUSTDOC_UNWANTED_CLASSES = ["sidebar", "search-form", "rustdoc-footer"]
+
+    def load(self, path: Path) -> Document:
+        """Load rustdoc HTML with Rust-specific metadata extraction."""
+        content = path.read_text(encoding="utf-8")
+        stat = path.stat()
+
+        # Parse with lxml
+        soup = BeautifulSoup(content, "lxml")
+
+        # Extract base metadata
+        metadata = self._extract_metadata(soup, path, stat)
+
+        # Add rustdoc-specific metadata
+        metadata["doc_type"] = "rustdoc"
+
+        # Extract module path from .fqn element
+        fqn = soup.find(class_="fqn")
+        if fqn:
+            metadata["module_path"] = fqn.get_text(strip=True)
+
+        # Extract item type from body class (e.g., "struct", "fn", "trait")
+        body = soup.find("body")
+        if body and body.get("class"):
+            classes = body["class"]
+            for cls in classes:
+                if cls in [
+                    "struct",
+                    "fn",
+                    "trait",
+                    "enum",
+                    "mod",
+                    "type",
+                    "macro",
+                    "constant",
+                ]:
+                    metadata["item_type"] = cls
+                    break
+
+        # Extract signature from .rust code block
+        rust_code = soup.find("pre", class_="rust")
+        if rust_code:
+            metadata["signature"] = rust_code.get_text(strip=True)
+
+        # Remove unwanted tags (parent class tags)
+        for tag_name in self.UNWANTED_TAGS:
+            for element in soup.find_all(tag_name):
+                element.decompose()
+
+        # Remove rustdoc-specific classes
+        for class_name in self.RUSTDOC_UNWANTED_CLASSES:
+            for element in soup.find_all(class_=class_name):
+                element.decompose()
+
+        # Extract clean text
+        text = soup.get_text(separator="\n", strip=True)
+
+        return Document(
+            content=text,
+            source_path=path,
+            metadata=metadata,
+        )
+
+
 # Registry mapping file extensions to loader classes
 # Code loaders are imported lazily in get_loader() to avoid circular imports
 LOADERS: dict[str, type[DocumentLoader]] = {
