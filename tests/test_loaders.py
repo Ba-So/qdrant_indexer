@@ -7,9 +7,11 @@ import pytest
 from qdrant_indexer.loaders import (
     LOADERS,
     DocumentLoader,
+    HTMLLoader,
     MarkdownLoader,
     PDFLoader,
     ReStructuredTextLoader,
+    RustdocLoader,
     TextLoader,
     get_loader,
 )
@@ -288,3 +290,128 @@ class TestLoadersRegistry:
         """Verify all registered loaders inherit from DocumentLoader."""
         for ext, loader_cls in LOADERS.items():
             assert issubclass(loader_cls, DocumentLoader), f"{ext} loader is not a DocumentLoader"
+
+
+class TestHTMLLoader:
+    """Tests for HTMLLoader."""
+
+    def test_load_html_basic(self, sample_html_file: Path):
+        """Verify basic HTML loading."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert doc.content
+        assert doc.source_path == sample_html_file
+
+    def test_html_title_extraction(self, sample_html_file: Path):
+        """Verify title extracted from <title> tag."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert doc.metadata.get("title") == "Test HTML Document"
+
+    def test_html_meta_extraction(self, sample_html_file: Path):
+        """Verify meta tags extracted to metadata."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert doc.metadata.get("description") == "A test HTML document for testing HTMLLoader"
+        assert doc.metadata.get("keywords") == "test, html, loader"
+        assert doc.metadata.get("author") == "Test Author"
+
+    def test_html_script_removal(self, sample_html_file: Path):
+        """Verify script tags are removed from content."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert "console.log" not in doc.content
+        assert "alert" not in doc.content
+
+    def test_html_style_removal(self, sample_html_file: Path):
+        """Verify style tags are removed from content."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert ".test { color: red; }" not in doc.content
+        assert "color: red" not in doc.content
+
+    def test_html_nav_removal(self, sample_html_file: Path):
+        """Verify navigation elements are removed."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert "Navigation menu" not in doc.content
+
+    def test_html_content_extracted(self, sample_html_file: Path):
+        """Verify actual content is extracted."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert "Main Header" in doc.content
+        assert "This is test content that should be extracted" in doc.content
+
+    def test_malformed_html_handling(self, malformed_html_file: Path):
+        """Verify malformed HTML is handled gracefully."""
+        loader = HTMLLoader()
+        doc = loader.load(malformed_html_file)
+        assert doc.content  # Should not crash
+        # Title may include extra content due to malformed HTML, but should contain expected text
+        assert "Malformed HTML" in doc.metadata.get("title", "")
+
+    def test_html_standard_metadata(self, sample_html_file: Path):
+        """Verify standard metadata fields present."""
+        loader = HTMLLoader()
+        doc = loader.load(sample_html_file)
+        assert doc.metadata["filename"] == "test.html"
+        assert doc.metadata["extension"] == ".html"
+        assert "size" in doc.metadata
+        assert "modified_time" in doc.metadata
+
+
+class TestRustdocLoader:
+    """Tests for RustdocLoader."""
+
+    def test_rustdoc_doc_type(self, sample_rustdoc_file: Path):
+        """Verify doc_type is set to 'rustdoc'."""
+        loader = RustdocLoader()
+        doc = loader.load(sample_rustdoc_file)
+        assert doc.metadata["doc_type"] == "rustdoc"
+
+    def test_rustdoc_module_path_extraction(self, sample_rustdoc_file: Path):
+        """Verify module_path extracted from .fqn element."""
+        loader = RustdocLoader()
+        doc = loader.load(sample_rustdoc_file)
+        assert doc.metadata.get("module_path") == "my_crate::module::MyStruct"
+
+    def test_rustdoc_item_type_detection(self, sample_rustdoc_file: Path):
+        """Verify item_type detected from body class."""
+        loader = RustdocLoader()
+        doc = loader.load(sample_rustdoc_file)
+        assert doc.metadata.get("item_type") == "struct"
+
+    def test_rustdoc_signature_extraction(self, sample_rustdoc_file: Path):
+        """Verify signature extracted from .rust code block."""
+        loader = RustdocLoader()
+        doc = loader.load(sample_rustdoc_file)
+        assert "MyStruct" in doc.metadata.get("signature", "")
+        assert "pub struct" in doc.metadata.get("signature", "")
+
+    def test_rustdoc_navigation_removal(self, sample_rustdoc_file: Path):
+        """Verify rustdoc-specific elements removed."""
+        loader = RustdocLoader()
+        doc = loader.load(sample_rustdoc_file)
+        assert "Sidebar content" not in doc.content
+        assert "Footer" not in doc.content
+
+    def test_rustdoc_content_extracted(self, sample_rustdoc_file: Path):
+        """Verify documentation content is extracted."""
+        loader = RustdocLoader()
+        doc = loader.load(sample_rustdoc_file)
+        assert "Documentation for MyStruct" in doc.content
+
+
+class TestLoaderFactoryHTML:
+    """Tests for HTML loader factory registration."""
+
+    def test_get_loader_for_html(self, tmp_path: Path):
+        """Verify .html returns HTMLLoader."""
+        loader = get_loader(tmp_path / "test.html")
+        assert isinstance(loader, HTMLLoader)
+
+    def test_get_loader_for_htm(self, tmp_path: Path):
+        """Verify .htm returns HTMLLoader."""
+        loader = get_loader(tmp_path / "test.htm")
+        assert isinstance(loader, HTMLLoader)

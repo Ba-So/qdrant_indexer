@@ -218,3 +218,82 @@ def sample_php_file(tmp_path: Path, sample_php_code: str) -> Path:
     file_path = tmp_path / "test.php"
     file_path.write_text(sample_php_code)
     return file_path
+
+
+@pytest.fixture
+def sample_html_content() -> str:
+    """Return sample HTML with title, meta tags, and scripts."""
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <title>Test HTML Document</title>
+    <meta name="description" content="A test HTML document for testing HTMLLoader">
+    <meta name="keywords" content="test, html, loader">
+    <meta name="author" content="Test Author">
+    <script>console.log('should be removed');</script>
+    <style>.test { color: red; }</style>
+</head>
+<body>
+    <nav>Navigation menu</nav>
+    <h1>Main Header</h1>
+    <p>This is test content that should be extracted.</p>
+    <script>alert('remove me');</script>
+</body>
+</html>"""
+
+
+@pytest.fixture
+def sample_html_file(tmp_path: Path, sample_html_content: str) -> Path:
+    """Create a temporary HTML file."""
+    file_path = tmp_path / "test.html"
+    file_path.write_text(sample_html_content)
+    return file_path
+
+
+@pytest.fixture
+def malformed_html_content() -> str:
+    """Return malformed HTML for robustness testing."""
+    return """<html>
+<head><title>Malformed HTML</head>
+<body>
+<p>Unclosed paragraph
+<div>Missing closing tags
+<script>broken script
+</body>"""
+
+
+@pytest.fixture
+def malformed_html_file(tmp_path: Path, malformed_html_content: str) -> Path:
+    """Create a temporary malformed HTML file."""
+    file_path = tmp_path / "malformed.html"
+    file_path.write_text(malformed_html_content)
+    return file_path
+
+
+@pytest.fixture
+def sample_rustdoc_content() -> str:
+    """Return rustdoc-style HTML structure."""
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <title>MyStruct in my_crate::module - Rust</title>
+</head>
+<body class="rustdoc struct">
+    <div class="sidebar">Sidebar content</div>
+    <div class="search-form">Search</div>
+    <h1 class="fqn">my_crate::module::MyStruct</h1>
+    <pre class="rust struct">pub struct MyStruct { /* fields */ }</pre>
+    <div class="docblock">
+        <p>Documentation for MyStruct.</p>
+    </div>
+    <footer class="rustdoc-footer">Footer</footer>
+</body>
+</html>"""
+
+
+@pytest.fixture
+def sample_rustdoc_file(tmp_path: Path, sample_rustdoc_content: str) -> Path:
+    """Create a temporary rustdoc HTML file."""
+    file_path = tmp_path / "rustdoc.html"
+    file_path.write_text(sample_rustdoc_content)
+    return file_path
