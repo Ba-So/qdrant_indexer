@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
 
+from bs4 import BeautifulSoup
 import frontmatter
 import fitz  # pymupdf
 import pymupdf.layout  # must be imported before pymupdf4llm to enable layout analysis
@@ -237,6 +238,74 @@ class ReStructuredTextLoader(DocumentLoader):
         )
 
 
+class HTMLLoader(DocumentLoader):
+    """Loader for HTML files with content cleaning and metadata extraction."""
+
+    # Tags to remove for clean text extraction
+    UNWANTED_TAGS = ["script", "style", "nav", "noscript", "iframe", "svg"]
+
+    def load(self, path: Path) -> Document:
+        """Load HTML file, extract metadata and clean text.
+
+        Removes scripts, styles, navigation elements.
+        Extracts metadata from <head> tags (title, description, keywords, author).
+        Returns clean text content using BeautifulSoup's get_text().
+        """
+        content = path.read_text(encoding="utf-8")
+        stat = path.stat()
+
+        # Parse with lxml parser (fast and handles malformed HTML)
+        soup = BeautifulSoup(content, "lxml")
+
+        # Extract metadata from <head>
+        metadata = self._extract_metadata(soup, path, stat)
+
+        # Remove unwanted tags
+        for tag in self.UNWANTED_TAGS:
+            for element in soup.find_all(tag):
+                element.decompose()
+
+        # Extract clean text
+        text = soup.get_text(separator="\n", strip=True)
+
+        return Document(
+            content=text,
+            source_path=path,
+            metadata=metadata,
+        )
+
+    def _extract_metadata(self, soup: BeautifulSoup, path: Path, stat) -> dict:
+        """Extract metadata from HTML <head> section."""
+        metadata = {
+            "filename": path.name,
+            "extension": path.suffix,
+            "size": stat.st_size,
+            "modified_time": stat.st_mtime,
+        }
+
+        # Extract title
+        if soup.title and soup.title.string:
+            metadata["title"] = soup.title.string.strip()
+
+        # Extract meta tags
+        meta_mappings = [
+            ("description", ["description", "og:description"]),
+            ("keywords", ["keywords"]),
+            ("author", ["author"]),
+        ]
+
+        for key, names in meta_mappings:
+            for name in names:
+                meta = soup.find("meta", attrs={"name": name}) or soup.find(
+                    "meta", attrs={"property": name}
+                )
+                if meta and meta.get("content"):
+                    metadata[key] = meta["content"].strip()
+                    break
+
+        return metadata
+
+
 # Registry mapping file extensions to loader classes
 # Code loaders are imported lazily in get_loader() to avoid circular imports
 LOADERS: dict[str, type[DocumentLoader]] = {
@@ -246,6 +315,8 @@ LOADERS: dict[str, type[DocumentLoader]] = {
     ".text": TextLoader,
     ".pdf": PDFLoader,
     ".rst": ReStructuredTextLoader,
+    ".html": HTMLLoader,
+    ".htm": HTMLLoader,
 }
 
 # Code file extensions - loaded lazily
