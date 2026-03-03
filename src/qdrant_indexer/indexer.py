@@ -29,8 +29,7 @@ from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
 
-# Default embedding model
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+from .config import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_BATCH_SIZE, DEFAULT_WORKERS, PDF_EXTENSIONS
 
 # Default CLIP vision model for image embeddings
 DEFAULT_CLIP_VISION_MODEL = "Qdrant/clip-ViT-B-32-vision"
@@ -121,15 +120,6 @@ def clip_model_to_vector_name(model_name: str) -> str:
 
 # Progress callback type: (event, current, total, message)
 ProgressCallback = Callable[[str, int, int, str], None]
-
-# Default number of workers for parallel processing
-DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
-
-# Default batch size for embedding - smaller batches use less GPU memory
-DEFAULT_EMBEDDING_BATCH_SIZE = 64
-
-# PDF extensions that need process-based parallelism (PyMuPDF is not thread-safe)
-PDF_EXTENSIONS = {".pdf"}
 
 
 def _load_pdf_file(args: tuple) -> dict:

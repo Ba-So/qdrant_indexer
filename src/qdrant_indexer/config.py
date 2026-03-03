@@ -1,6 +1,19 @@
 """Configuration handling for Qdrant Indexer."""
 
 import os
+
+# Default embedding model name
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Default batch size for embedding - smaller batches use less GPU memory
+DEFAULT_EMBEDDING_BATCH_SIZE = 64
+
+# Default number of workers for parallel processing (max 4, based on CPU count)
+DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
+
+# PDF extensions that need process‑based parallelism (PyMuPDF is not thread‑safe)
+PDF_EXTENSIONS = {".pdf"}
+
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,7 +73,7 @@ class Config:
     image_embedding: ImageEmbeddingConfig = field(default_factory=ImageEmbeddingConfig)
 
 
-CONFIG_FILENAME = ".qdrant-indexer.toml"
+DEFAULT_CONFIG_FILENAMES = ["config.toml", ".qdrant-indexer.toml"]
 
 
 def find_config_file(start_path: Path | None = None) -> Path | None:
@@ -78,10 +91,11 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
     current = start_path.resolve()
 
     while True:
-        config_path = current / CONFIG_FILENAME
-        if config_path.exists():
-            return config_path
-
+        # Check each possible config filename
+        for fn in DEFAULT_CONFIG_FILENAMES:
+            config_path = current / fn
+            if config_path.exists():
+                return config_path
         parent = current.parent
         if parent == current:
             # Reached root
