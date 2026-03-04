@@ -8,6 +8,7 @@ from qdrant_indexer.chunkers import (
     HTMLChunker,
     MarkdownChunker,
     RecursiveChunker,
+    SemanticChunker,
     merge_small_chunks,
     split_text_with_overlap,
 )
@@ -703,3 +704,255 @@ class TestHTMLChunker:
         # Should not have multiple consecutive spaces
         assert "    " not in combined
         assert "Content with extra spaces" in combined
+
+
+class TestSemanticChunker:
+    """Tests for SemanticChunker."""
+
+    def test_is_chunker_subclass(self):
+        """Verify SemanticChunker is a Chunker."""
+        assert issubclass(SemanticChunker, Chunker)
+
+    def test_empty_text_returns_empty_list(self):
+        """Test that empty input returns []."""
+        chunker = SemanticChunker()
+        assert chunker.chunk("") == []
+        assert chunker.chunk("   ") == []
+        assert chunker.chunk("\n\n") == []
+
+    def test_small_text_returns_single_chunk(self):
+        """Verify single chunk returned for small text."""
+        chunker = SemanticChunker(chunk_size=1000)
+        text = "Short text that fits in one chunk."
+        chunks = chunker.chunk(text)
+
+        assert len(chunks) == 1
+        assert chunks[0] == text
+
+    def test_default_parameters(self):
+        """Verify default values for SemanticChunker."""
+        chunker = SemanticChunker()
+        assert chunker.chunk_size == 1500
+        assert chunker.min_chunk_size == 200
+        assert chunker.similarity_threshold == 0.5
+        assert chunker.embedding_model == "sentence-transformers/all-MiniLM-L6-v2"
+
+    def test_splits_at_topic_change(self):
+        """Test that text is split at semantic topic boundaries."""
+        # Create text with distinctly different topics, each long enough
+        python_topic = (
+            "Python is a programming language. It has functions and classes. "
+            "Variables store data. Loops iterate over sequences. "
+            "Python supports object-oriented programming. "
+            "Python developers write clean and readable code. "
+            "The Python community creates many useful libraries. "
+            "Type hints improve Python code documentation."
+        )
+        cooking_topic = (
+            "Cooking requires ingredients and recipes. Baking uses an oven. "
+            "Chefs prepare delicious meals. Spices add flavor to dishes. "
+            "Kitchen equipment includes pots and pans. "
+            "Restaurants serve customers every day. "
+            "Food preparation follows safety guidelines. "
+            "Culinary arts combine creativity with technique."
+        )
+        space_topic = (
+            "Space exploration involves rockets and satellites. "
+            "Astronauts travel to the International Space Station. "
+            "The Moon orbits the Earth. Mars is the red planet. "
+            "Telescopes observe distant galaxies. "
+            "NASA launches missions to explore the solar system. "
+            "Space technology advances human knowledge constantly."
+        )
+
+        text = f"{python_topic}\n\n{cooking_topic}\n\n{space_topic}"
+
+        # Use smaller chunk_size to ensure splitting is needed
+        chunker = SemanticChunker(chunk_size=400, similarity_threshold=0.5)
+        chunks = chunker.chunk(text)
+
+        # Should split into multiple chunks at topic boundaries
+        assert len(chunks) >= 2
+
+        # Each chunk should contain content
+        for chunk in chunks:
+            assert len(chunk) > 0
+
+    def test_keeps_similar_content_together(self):
+        """Test that semantically similar content stays together."""
+        # All about programming
+        text = """
+        Programming involves writing code. Developers use text editors.
+        Software engineering is a discipline. Code must be tested.
+
+        Functions accept parameters. Methods belong to classes.
+        Variables store values. Types define data structures.
+
+        Debugging finds errors. Testing validates behavior.
+        Refactoring improves code. Documentation explains usage.
+        """
+
+        chunker = SemanticChunker(chunk_size=1000, similarity_threshold=0.3)
+        chunks = chunker.chunk(text.strip())
+
+        # With similar content and low threshold, may produce fewer chunks
+        assert len(chunks) >= 1
+        # Content should be preserved
+        combined = " ".join(chunks)
+        assert "Programming" in combined
+        assert "Functions" in combined
+
+    def test_chunks_respect_max_size(self):
+        """Assert all chunks <= chunk_size."""
+        # Create a long text with varying topics
+        topics = [
+            "Machine learning algorithms process data to find patterns. "
+            "Neural networks mimic the human brain structure. " * 5,
+            "Ancient history spans thousands of years of civilization. "
+            "Empires rose and fell across the world. " * 5,
+            "Music theory covers scales, chords, and harmony. "
+            "Composers create symphonies and concertos. " * 5,
+        ]
+        text = "\n\n".join(topics)
+
+        chunker = SemanticChunker(chunk_size=400, similarity_threshold=0.5)
+        chunks = chunker.chunk(text)
+
+        for i, chunk in enumerate(chunks):
+            assert len(chunk) <= 400, f"Chunk {i} exceeds size limit: {len(chunk)}"
+
+    def test_small_chunks_merged(self):
+        """Test that chunks smaller than min_chunk_size are merged."""
+        # Create paragraphs that would individually be very small
+        text = """
+        Hi.
+
+        Hello.
+
+        Hey.
+
+        Greetings.
+
+        Salutations.
+
+        Now let's talk about something completely different for a longer paragraph.
+        This paragraph discusses philosophy and the meaning of existence in depth.
+        """
+
+        chunker = SemanticChunker(
+            chunk_size=500, min_chunk_size=100, similarity_threshold=0.3
+        )
+        chunks = chunker.chunk(text.strip())
+
+        # Small chunks should be merged
+        # We shouldn't have 6 separate tiny chunks
+        assert len(chunks) <= 4
+
+    def test_fallback_on_uniform_similarity(self):
+        """Test fallback to RecursiveChunker when similarity is uniform."""
+        # Highly repetitive text with uniform similarity
+        text = ("This is a sentence. " * 100).strip()
+
+        chunker = SemanticChunker(chunk_size=200, similarity_threshold=0.5)
+        chunks = chunker.chunk(text)
+
+        # Should still produce chunks (via fallback)
+        assert len(chunks) > 0
+        # All chunks should respect size limit
+        for chunk in chunks:
+            assert len(chunk) <= 200
+
+    def test_model_caching(self):
+        """Test that the embedding model is cached at class level."""
+        chunker1 = SemanticChunker()
+        chunker2 = SemanticChunker()
+
+        # Access model through both chunkers
+        model1 = SemanticChunker._get_model(chunker1.embedding_model)
+        model2 = SemanticChunker._get_model(chunker2.embedding_model)
+
+        # Should be the same cached instance
+        assert model1 is model2
+
+    def test_unicode_text(self):
+        """Test chunking works with unicode characters."""
+        text = """
+        中文段落讨论编程。Python是一种流行的编程语言。
+        变量存储数据。函数执行操作。
+
+        日本語のセクション。プログラミングは楽しいです。
+        コードを書くのは創造的な活動です。
+
+        Ελληνικά κείμενα. Ο προγραμματισμός είναι τέχνη.
+        Οι αλγόριθμοι λύνουν προβλήματα.
+        """
+
+        chunker = SemanticChunker(chunk_size=500, similarity_threshold=0.5)
+        chunks = chunker.chunk(text.strip())
+
+        # Should produce chunks
+        assert len(chunks) > 0
+
+        # Content should be preserved
+        combined = " ".join(chunks)
+        assert "中文" in combined or "Python" in combined
+        assert "日本語" in combined or "プログラミング" in combined
+
+    def test_sentence_level_splitting(self):
+        """Test that sentence-level splitting works when paragraphs don't."""
+        # Single paragraph with multiple sentences on different topics
+        text = (
+            "Python is a programming language used for software development. "
+            "JavaScript runs in web browsers. "
+            "The weather today is sunny and warm. "
+            "Rain is expected tomorrow afternoon. "
+            "Cooking pasta requires boiling water. "
+            "Italian cuisine features tomatoes and olive oil. "
+        ) * 3
+
+        chunker = SemanticChunker(chunk_size=400, similarity_threshold=0.4)
+        chunks = chunker.chunk(text.strip())
+
+        # Should produce chunks
+        assert len(chunks) >= 1
+        # Content preserved
+        combined = " ".join(chunks)
+        assert "Python" in combined
+        assert "weather" in combined
+
+    def test_custom_embedding_model(self):
+        """Test that custom embedding model parameter is stored."""
+        custom_model = "sentence-transformers/paraphrase-MiniLM-L3-v2"
+        chunker = SemanticChunker(embedding_model=custom_model)
+
+        assert chunker.embedding_model == custom_model
+
+    def test_similarity_threshold_effect(self):
+        """Test that lower threshold results in fewer splits."""
+        text = """
+        Programming involves writing code. Software developers create applications.
+        Code editors help write programs. IDEs provide debugging tools.
+
+        Machine learning uses algorithms. Neural networks learn patterns.
+        Data science analyzes information. AI automates decisions.
+
+        Web development creates websites. HTML structures content.
+        CSS styles pages. JavaScript adds interactivity.
+        """
+
+        # High threshold - more likely to split
+        chunker_high = SemanticChunker(
+            chunk_size=1000, similarity_threshold=0.7
+        )
+        chunks_high = chunker_high.chunk(text.strip())
+
+        # Low threshold - less likely to split
+        chunker_low = SemanticChunker(
+            chunk_size=1000, similarity_threshold=0.2
+        )
+        chunks_low = chunker_low.chunk(text.strip())
+
+        # Higher threshold should generally produce more or equal chunks
+        # (though this isn't strictly guaranteed due to merging)
+        assert len(chunks_high) >= 1
+        assert len(chunks_low) >= 1

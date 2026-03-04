@@ -1,11 +1,16 @@
 """Text chunking strategies for document processing."""
 
+import logging
 import re
 from abc import ABC, abstractmethod
 
+import numpy as np
 from bs4 import BeautifulSoup, Tag
+from fastembed import TextEmbedding
 
 from qdrant_indexer.models import CodeSymbol
+
+logger = logging.getLogger(__name__)
 
 
 class Chunker(ABC):
@@ -898,3 +903,291 @@ class HTMLChunker(Chunker):
         chunks = [c for c in chunks if c.strip()]
 
         return chunks
+
+
+class SemanticChunker(Chunker):
+    """Semantic chunker that splits text based on embedding similarity.
+
+    Uses fastembed embeddings to compute semantic similarity between text
+    segments and splits at points where similarity drops below a threshold.
+    Falls back to RecursiveChunker when semantic splitting is not effective.
+    """
+
+    # Class-level model cache
+    _model: TextEmbedding | None = None
+    _model_name: str | None = None
+
+    def __init__(
+        self,
+        chunk_size: int = 1500,
+        min_chunk_size: int = 200,
+        similarity_threshold: float = 0.5,
+        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+    ):
+        """Initialize the semantic chunker.
+
+        Args:
+            chunk_size: Maximum size of each chunk in characters.
+            min_chunk_size: Minimum chunk size; smaller chunks are merged.
+            similarity_threshold: Cosine similarity threshold below which to split.
+            embedding_model: Name of the fastembed model to use.
+        """
+        self.chunk_size = chunk_size
+        self.min_chunk_size = min_chunk_size
+        self.similarity_threshold = similarity_threshold
+        self.embedding_model = embedding_model
+
+    @classmethod
+    def _get_model(cls, model_name: str) -> TextEmbedding:
+        """Get or create cached TextEmbedding model.
+
+        Args:
+            model_name: Name of the embedding model.
+
+        Returns:
+            Cached or newly created TextEmbedding instance.
+        """
+        if cls._model is None or cls._model_name != model_name:
+            cls._model = TextEmbedding(model_name=model_name)
+            cls._model_name = model_name
+        return cls._model
+
+    def _split_into_paragraphs(self, text: str) -> list[str]:
+        """Split text on double newlines.
+
+        Args:
+            text: The text to split.
+
+        Returns:
+            List of paragraph strings.
+        """
+        paragraphs = text.split("\n\n")
+        return [p.strip() for p in paragraphs if p.strip()]
+
+    def _split_into_sentences(self, text: str) -> list[str]:
+        """Split text into sentences using regex.
+
+        Args:
+            text: The text to split.
+
+        Returns:
+            List of sentence strings.
+        """
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        return [s.strip() for s in sentences if s.strip()]
+
+    def _compute_embeddings(self, segments: list[str]) -> list[np.ndarray]:
+        """Compute embeddings for a list of text segments.
+
+        Args:
+            segments: List of text segments to embed.
+
+        Returns:
+            List of embedding vectors as numpy arrays.
+        """
+        model = self._get_model(self.embedding_model)
+        embeddings = list(model.embed(segments))
+        return [np.array(e) for e in embeddings]
+
+    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        """Compute cosine similarity between two vectors.
+
+        Args:
+            a: First embedding vector.
+            b: Second embedding vector.
+
+        Returns:
+            Cosine similarity value between -1 and 1.
+        """
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return float(np.dot(a, b) / (norm_a * norm_b))
+
+    def _find_split_points(
+        self, embeddings: list[np.ndarray], threshold: float
+    ) -> list[int]:
+        """Find indices where similarity drops below threshold.
+
+        Args:
+            embeddings: List of embedding vectors.
+            threshold: Similarity threshold for splitting.
+
+        Returns:
+            List of indices where splits should occur (after these indices).
+        """
+        split_points = []
+        for i in range(len(embeddings) - 1):
+            similarity = self._cosine_similarity(embeddings[i], embeddings[i + 1])
+            if similarity < threshold:
+                split_points.append(i)
+        return split_points
+
+    def _merge_segments(
+        self, segments: list[str], split_points: list[int], separator: str
+    ) -> list[str]:
+        """Merge segments between split points.
+
+        Args:
+            segments: List of text segments.
+            split_points: Indices where splits occur.
+            separator: String to join segments with.
+
+        Returns:
+            List of merged chunks.
+        """
+        if not segments:
+            return []
+
+        if not split_points:
+            return [separator.join(segments)]
+
+        chunks = []
+        start = 0
+
+        for split_idx in split_points:
+            chunk_segments = segments[start : split_idx + 1]
+            if chunk_segments:
+                chunks.append(separator.join(chunk_segments))
+            start = split_idx + 1
+
+        # Add remaining segments
+        if start < len(segments):
+            remaining = segments[start:]
+            if remaining:
+                chunks.append(separator.join(remaining))
+
+        return chunks
+
+    def _enforce_size_constraints(self, chunks: list[str]) -> list[str]:
+        """Merge small chunks and split oversized ones.
+
+        Args:
+            chunks: List of text chunks.
+
+        Returns:
+            List of chunks respecting size constraints.
+        """
+        if not chunks:
+            return []
+
+        result = []
+        current = ""
+
+        for chunk in chunks:
+            if not current:
+                current = chunk
+            elif len(current) < self.min_chunk_size:
+                # Try to merge small chunks
+                merged = current + "\n\n" + chunk
+                if len(merged) <= self.chunk_size:
+                    current = merged
+                else:
+                    # Current is small but merging exceeds limit
+                    result.append(current)
+                    current = chunk
+            else:
+                result.append(current)
+                current = chunk
+
+        if current:
+            result.append(current)
+
+        # Split any remaining oversized chunks
+        final_result = []
+        for chunk in result:
+            if len(chunk) <= self.chunk_size:
+                final_result.append(chunk)
+            else:
+                sub_chunks = self._fallback_chunk(chunk)
+                final_result.extend(sub_chunks)
+
+        return final_result
+
+    def _fallback_chunk(self, text: str) -> list[str]:
+        """Fall back to RecursiveChunker for text.
+
+        Args:
+            text: Text to chunk.
+
+        Returns:
+            List of chunks from RecursiveChunker.
+        """
+        return RecursiveChunker(self.chunk_size, overlap=0).chunk(text)
+
+    def chunk(self, text: str) -> list[str]:
+        """Split text into semantically coherent chunks.
+
+        Algorithm:
+        1. Handle edge cases (empty text, small text)
+        2. Try paragraph-level splitting first
+        3. Fall back to sentence-level if needed
+        4. Compute embeddings and find semantic boundaries
+        5. Merge segments between boundaries
+        6. Enforce size constraints
+
+        Args:
+            text: The text to chunk.
+
+        Returns:
+            List of text chunks.
+        """
+        if not text or not text.strip():
+            return []
+
+        text = text.strip()
+
+        if len(text) <= self.chunk_size:
+            return [text]
+
+        # Try paragraph-level splitting first
+        paragraphs = self._split_into_paragraphs(text)
+
+        # Use paragraphs if we have enough of them with reasonable size
+        if len(paragraphs) >= 3:
+            avg_size = sum(len(p) for p in paragraphs) / len(paragraphs)
+            if avg_size >= 100:
+                return self._semantic_split(paragraphs, separator="\n\n")
+
+        # Fall back to sentence-level splitting
+        sentences = self._split_into_sentences(text)
+        if len(sentences) >= 3:
+            return self._semantic_split(sentences, separator=" ")
+
+        # If we have very few segments, use fallback
+        return self._fallback_chunk(text)
+
+    def _semantic_split(self, segments: list[str], separator: str) -> list[str]:
+        """Perform semantic splitting on segments.
+
+        Args:
+            segments: List of text segments (paragraphs or sentences).
+            separator: String to join segments with.
+
+        Returns:
+            List of semantically coherent chunks.
+        """
+        try:
+            embeddings = self._compute_embeddings(segments)
+        except Exception as e:
+            logger.warning(f"Embedding error, falling back to recursive: {e}")
+            return self._fallback_chunk(separator.join(segments))
+
+        # Find split points at similarity threshold
+        split_points = self._find_split_points(embeddings, self.similarity_threshold)
+
+        # If no split points found, try with a lower threshold
+        if not split_points:
+            lower_threshold = self.similarity_threshold * 0.7
+            split_points = self._find_split_points(embeddings, lower_threshold)
+
+        # If still no split points (uniform similarity), use fallback
+        if not split_points:
+            return self._fallback_chunk(separator.join(segments))
+
+        # Merge segments between split points
+        chunks = self._merge_segments(segments, split_points, separator)
+
+        # Enforce size constraints
+        return self._enforce_size_constraints(chunks)
