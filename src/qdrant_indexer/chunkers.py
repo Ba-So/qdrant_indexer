@@ -3,6 +3,8 @@
 import re
 from abc import ABC, abstractmethod
 
+from bs4 import BeautifulSoup, Tag
+
 from qdrant_indexer.models import CodeSymbol
 
 
@@ -625,3 +627,274 @@ class CodeChunker(Chunker):
             for chunk_text in symbol_chunks:
                 result.append((chunk_text, symbol))
         return result
+
+
+class HTMLChunker(Chunker):
+    """HTML-aware chunker that splits on semantic tag boundaries.
+
+    Splits HTML documents at semantic tag boundaries (article, section, main, etc.)
+    or heading tags (h1-h6) while respecting chunk size limits. Falls back to
+    RecursiveChunker for oversized sections or documents without structure.
+    Output is clean text with HTML tags stripped.
+    """
+
+    # Semantic tags to split on (in order of preference)
+    SEMANTIC_TAGS = ["article", "section", "main", "aside", "header", "footer", "nav"]
+    # Heading tags for fallback splitting
+    HEADING_TAGS = ["h1", "h2", "h3", "h4", "h5", "h6"]
+    # Tags to remove entirely
+    REMOVE_TAGS = ["script", "style", "noscript"]
+
+    def __init__(
+        self,
+        chunk_size: int = 1500,
+        overlap: int = 100,
+        preserve_tags: list[str] | None = None,
+    ):
+        """Initialize the HTML chunker.
+
+        Args:
+            chunk_size: Maximum size of each chunk in characters.
+            overlap: Number of characters to overlap between chunks.
+            preserve_tags: Optional list of tags whose structure to preserve
+                          (not currently used, reserved for future).
+        """
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        self.preserve_tags = preserve_tags
+
+    def _clean_soup(self, soup: BeautifulSoup) -> None:
+        """Remove script, style, and other unwanted tags from soup in place.
+
+        Args:
+            soup: BeautifulSoup object to clean.
+        """
+        for tag_name in self.REMOVE_TAGS:
+            for tag in soup.find_all(tag_name):
+                tag.decompose()
+
+    def _extract_text(self, element: Tag | BeautifulSoup) -> str:
+        """Extract clean text from an HTML element.
+
+        Args:
+            element: BeautifulSoup Tag or soup object.
+
+        Returns:
+            Clean text with whitespace normalized.
+        """
+        text = element.get_text(separator=" ", strip=True)
+        # Normalize whitespace
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def _split_by_semantic_tags(self, soup: BeautifulSoup) -> list[str]:
+        """Split HTML by semantic tags (article, section, main, etc.).
+
+        Args:
+            soup: Cleaned BeautifulSoup object.
+
+        Returns:
+            List of text chunks, or empty list if no semantic tags found.
+        """
+        chunks: list[str] = []
+
+        # Find all semantic tags
+        semantic_elements = soup.find_all(self.SEMANTIC_TAGS)
+
+        if not semantic_elements:
+            return []
+
+        for element in semantic_elements:
+            text = self._extract_text(element)
+            if text:
+                chunks.append(text)
+
+        return chunks
+
+    def _split_by_headings(self, soup: BeautifulSoup) -> list[str]:
+        """Split HTML by heading tags (h1-h6).
+
+        Args:
+            soup: Cleaned BeautifulSoup object.
+
+        Returns:
+            List of text chunks, or empty list if no headings found.
+        """
+        chunks: list[str] = []
+
+        # Find all headings
+        headings = soup.find_all(self.HEADING_TAGS)
+
+        if not headings:
+            return []
+
+        # Collect content between headings
+        for i, heading in enumerate(headings):
+            section_text_parts = [self._extract_text(heading)]
+
+            # Collect siblings until next heading or end
+            current = heading.next_sibling
+            while current:
+                if isinstance(current, Tag):
+                    if current.name in self.HEADING_TAGS:
+                        break
+                    # Skip if this element contains a heading (nested structure)
+                    if current.find(self.HEADING_TAGS):
+                        break
+                    text = self._extract_text(current)
+                    if text:
+                        section_text_parts.append(text)
+                current = current.next_sibling
+
+            section_text = " ".join(section_text_parts)
+            if section_text.strip():
+                chunks.append(section_text.strip())
+
+        return chunks
+
+    def _handle_table(self, table: Tag) -> list[str]:
+        """Handle a table element, keeping it together or splitting by rows.
+
+        Args:
+            table: A table Tag element.
+
+        Returns:
+            List of text chunks from the table.
+        """
+        full_text = self._extract_text(table)
+
+        # If table fits in one chunk, return as-is
+        if len(full_text) <= self.chunk_size:
+            return [full_text] if full_text else []
+
+        # Table too large, split by rows
+        chunks: list[str] = []
+        current_chunk = ""
+
+        rows = table.find_all("tr")
+        for row in rows:
+            row_text = self._extract_text(row)
+            if not row_text:
+                continue
+
+            # Try to add row to current chunk
+            if current_chunk:
+                test_chunk = current_chunk + " | " + row_text
+            else:
+                test_chunk = row_text
+
+            if len(test_chunk) <= self.chunk_size:
+                current_chunk = test_chunk
+            else:
+                # Save current chunk and start new one
+                if current_chunk:
+                    chunks.append(current_chunk)
+
+                # Check if row itself is too large
+                if len(row_text) > self.chunk_size:
+                    # Split the row text
+                    row_chunks = RecursiveChunker(
+                        self.chunk_size, self.overlap
+                    ).chunk(row_text)
+                    chunks.extend(row_chunks)
+                    current_chunk = ""
+                else:
+                    current_chunk = row_text
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    def _process_tables(self, soup: BeautifulSoup) -> list[str]:
+        """Process all tables in the document.
+
+        Args:
+            soup: Cleaned BeautifulSoup object.
+
+        Returns:
+            List of text chunks from tables.
+        """
+        chunks: list[str] = []
+        for table in soup.find_all("table"):
+            table_chunks = self._handle_table(table)
+            chunks.extend(table_chunks)
+            # Remove table from soup to avoid double-processing
+            table.decompose()
+        return chunks
+
+    def _split_oversized_chunks(self, chunks: list[str]) -> list[str]:
+        """Split any chunks that exceed chunk_size using RecursiveChunker.
+
+        Args:
+            chunks: List of text chunks.
+
+        Returns:
+            List of chunks all within size limit.
+        """
+        result: list[str] = []
+        recursive = RecursiveChunker(self.chunk_size, self.overlap)
+
+        for chunk in chunks:
+            if len(chunk) <= self.chunk_size:
+                result.append(chunk)
+            else:
+                sub_chunks = recursive.chunk(chunk)
+                result.extend(sub_chunks)
+
+        return result
+
+    def chunk(self, text: str) -> list[str]:
+        """Split HTML text into chunks respecting semantic boundaries.
+
+        The chunking strategy follows this order:
+        1. Split on semantic tags (article, section, main, etc.)
+        2. If no semantic tags, split on heading tags (h1-h6)
+        3. If no structure, fall back to RecursiveChunker
+
+        Tables are handled specially - kept together if possible,
+        otherwise split by row.
+
+        Args:
+            text: The HTML text to chunk.
+
+        Returns:
+            List of plain text chunks (HTML tags stripped).
+        """
+        if not text or not text.strip():
+            return []
+
+        # Parse HTML with lxml for robustness
+        soup = BeautifulSoup(text, "lxml")
+
+        # Remove script, style, and other unwanted tags
+        self._clean_soup(soup)
+
+        # Process tables first (they get special handling)
+        table_chunks = self._process_tables(soup)
+
+        # Try semantic tag splitting first
+        chunks = self._split_by_semantic_tags(soup)
+
+        # If no semantic tags, try heading-based splitting
+        if not chunks:
+            chunks = self._split_by_headings(soup)
+
+        # If still no structure, extract all text and use RecursiveChunker
+        if not chunks:
+            full_text = self._extract_text(soup)
+            if full_text:
+                chunks = RecursiveChunker(self.chunk_size, self.overlap).chunk(
+                    full_text
+                )
+
+        # Add table chunks
+        chunks.extend(table_chunks)
+
+        # Split any oversized chunks
+        chunks = self._split_oversized_chunks(chunks)
+
+        # Filter empty chunks
+        chunks = [c for c in chunks if c.strip()]
+
+        return chunks
