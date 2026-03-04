@@ -1,5 +1,6 @@
 """Text chunking strategies for document processing."""
 
+import re
 from abc import ABC, abstractmethod
 
 from qdrant_indexer.models import CodeSymbol
@@ -132,7 +133,7 @@ class RecursiveChunker(Chunker):
 class FixedSizeChunker(Chunker):
     """Simple fixed-size chunker without semantic awareness."""
 
-    def __init__(self, chunk_size: int = 512, overlap: int = 50):
+    def __init__(self, chunk_size: int = 1536, overlap: int = 50):
         """Initialize the chunker.
 
         Args:
@@ -227,6 +228,292 @@ def merge_small_chunks(
     return result
 
 
+class MarkdownChunker(Chunker):
+    """Markdown-aware chunker that splits on header boundaries.
+
+    Splits markdown documents at header boundaries (# through ######)
+    while respecting chunk size limits. Falls back to RecursiveChunker
+    for oversized sections or documents without headers.
+    """
+
+    def __init__(
+        self,
+        chunk_size: int = 1500,
+        overlap: int = 100,
+        min_section_size: int = 100,
+    ):
+        """Initialize the markdown chunker.
+
+        Args:
+            chunk_size: Maximum size of each chunk in characters.
+            overlap: Number of characters to overlap between chunks.
+            min_section_size: Minimum section size before merging with neighbors.
+        """
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        self.min_section_size = min_section_size
+
+    def _extract_frontmatter(self, text: str) -> tuple[str | None, str]:
+        """Extract YAML frontmatter from text.
+
+        Args:
+            text: The markdown text.
+
+        Returns:
+            Tuple of (frontmatter content or None, remaining text).
+        """
+        pattern = r"^---\n(.*?)\n---\n"
+        match = re.match(pattern, text, re.DOTALL)
+        if match:
+            frontmatter = match.group(0).strip()
+            remaining = text[match.end() :]
+            return frontmatter, remaining
+        return None, text
+
+    def _find_code_blocks(self, text: str) -> list[tuple[int, int]]:
+        """Find code block positions in text.
+
+        Args:
+            text: The markdown text.
+
+        Returns:
+            List of (start, end) positions for code blocks.
+        """
+        positions = []
+        pattern = r"```.*?```"
+        for match in re.finditer(pattern, text, re.DOTALL):
+            positions.append((match.start(), match.end()))
+        return positions
+
+    def _is_inside_code_block(
+        self, pos: int, code_blocks: list[tuple[int, int]]
+    ) -> bool:
+        """Check if a position is inside a code block.
+
+        Args:
+            pos: Position in text.
+            code_blocks: List of (start, end) code block positions.
+
+        Returns:
+            True if position is inside a code block.
+        """
+        for start, end in code_blocks:
+            if start <= pos < end:
+                return True
+        return False
+
+    def _parse_sections(self, text: str) -> list[dict[str, int | str]]:
+        """Parse document into sections with headers.
+
+        Args:
+            text: The markdown text (without frontmatter).
+
+        Returns:
+            List of section dicts with keys: level, title, content, start_pos, end_pos.
+        """
+        if not text.strip():
+            return []
+
+        code_blocks = self._find_code_blocks(text)
+        header_pattern = r"^(#{1,6})\s+(.+)$"
+        sections: list[dict[str, int | str]] = []
+
+        # Find all headers that are not inside code blocks
+        header_matches = []
+        for match in re.finditer(header_pattern, text, re.MULTILINE):
+            if not self._is_inside_code_block(match.start(), code_blocks):
+                header_matches.append(match)
+
+        if not header_matches:
+            # No headers found, return entire text as level 0
+            return [
+                {
+                    "level": 0,
+                    "title": "",
+                    "content": text,
+                    "start_pos": 0,
+                    "end_pos": len(text),
+                }
+            ]
+
+        # Handle content before first header
+        first_header_pos = header_matches[0].start()
+        if first_header_pos > 0:
+            pre_content = text[:first_header_pos].strip()
+            if pre_content:
+                sections.append(
+                    {
+                        "level": 0,
+                        "title": "",
+                        "content": pre_content,
+                        "start_pos": 0,
+                        "end_pos": first_header_pos,
+                    }
+                )
+
+        # Process each header
+        for i, match in enumerate(header_matches):
+            level = len(match.group(1))
+            title = match.group(2).strip()
+            start_pos = match.start()
+
+            # Content ends at next header or end of text
+            if i + 1 < len(header_matches):
+                end_pos = header_matches[i + 1].start()
+            else:
+                end_pos = len(text)
+
+            content = text[start_pos:end_pos].strip()
+            sections.append(
+                {
+                    "level": level,
+                    "title": title,
+                    "content": content,
+                    "start_pos": start_pos,
+                    "end_pos": end_pos,
+                }
+            )
+
+        return sections
+
+    def _build_header_context(
+        self, sections: list[dict[str, int | str]], current_idx: int
+    ) -> str:
+        """Build parent header breadcrumb for context.
+
+        Args:
+            sections: List of parsed sections.
+            current_idx: Index of current section.
+
+        Returns:
+            Header context string like "# Title > ## Section > ### Subsection".
+        """
+        if current_idx < 0 or current_idx >= len(sections):
+            return ""
+
+        current_level = sections[current_idx]["level"]
+        if current_level == 0:
+            return ""
+
+        # Collect parent headers
+        parents = []
+        target_level = int(current_level) - 1
+
+        for i in range(current_idx - 1, -1, -1):
+            section = sections[i]
+            level = section["level"]
+            if level == 0:
+                continue
+            if int(level) <= target_level:
+                header_marker = "#" * int(level)
+                parents.append(f"{header_marker} {section['title']}")
+                target_level = int(level) - 1
+                if target_level < 1:
+                    break
+
+        parents.reverse()
+        return " > ".join(parents) if parents else ""
+
+    def chunk(self, text: str) -> list[str]:
+        """Split markdown text into chunks respecting header boundaries.
+
+        Args:
+            text: The markdown text to chunk.
+
+        Returns:
+            List of text chunks.
+        """
+        if not text or not text.strip():
+            return []
+
+        # Extract frontmatter
+        frontmatter, remaining = self._extract_frontmatter(text)
+
+        # Parse sections
+        sections = self._parse_sections(remaining)
+
+        # No headers? Fall back to RecursiveChunker
+        if not sections or all(s["level"] == 0 for s in sections):
+            return RecursiveChunker(self.chunk_size, self.overlap).chunk(text)
+
+        chunks: list[str] = []
+
+        # Add frontmatter as separate chunk if present and not empty
+        if frontmatter and frontmatter.strip():
+            chunks.append(frontmatter)
+
+        # Merge small consecutive sections
+        merged_sections = self._merge_small_sections(sections)
+
+        # Process each section
+        for i, section in enumerate(merged_sections):
+            content = str(section["content"])
+            if not content.strip():
+                continue
+
+            if len(content) <= self.chunk_size:
+                chunks.append(content)
+            else:
+                # Section too large, use RecursiveChunker with header context
+                header_context = self._build_header_context(sections, i)
+                sub_chunks = RecursiveChunker(self.chunk_size, self.overlap).chunk(
+                    content
+                )
+
+                for j, sub_chunk in enumerate(sub_chunks):
+                    if header_context and j > 0:
+                        # Prepend context to continuation chunks
+                        context_prefix = f"[Context: {header_context}]\n\n"
+                        if len(context_prefix) + len(sub_chunk) <= self.chunk_size:
+                            sub_chunk = context_prefix + sub_chunk
+                    chunks.append(sub_chunk)
+
+        return chunks
+
+    def _merge_small_sections(
+        self, sections: list[dict[str, int | str]]
+    ) -> list[dict[str, int | str]]:
+        """Merge consecutive small sections.
+
+        Args:
+            sections: List of parsed sections.
+
+        Returns:
+            List of sections with small ones merged.
+        """
+        if not sections:
+            return []
+
+        merged: list[dict[str, int | str]] = []
+        current: dict[str, int | str] | None = None
+
+        for section in sections:
+            content = str(section["content"])
+
+            if current is None:
+                current = dict(section)
+                continue
+
+            current_content = str(current["content"])
+
+            # If current section is small, try to merge
+            if len(current_content) < self.min_section_size:
+                merged_content = current_content + "\n\n" + content
+                if len(merged_content) <= self.chunk_size:
+                    current["content"] = merged_content
+                    current["end_pos"] = section["end_pos"]
+                    continue
+
+            # Can't merge, save current and start new
+            merged.append(current)
+            current = dict(section)
+
+        if current is not None:
+            merged.append(current)
+
+        return merged
+
+
 class CodeChunker(Chunker):
     """Code-aware chunker that respects symbol boundaries.
 
@@ -235,7 +522,7 @@ class CodeChunker(Chunker):
     """
 
     def __init__(
-        self, chunk_size: int = 1532, overlap: int = 200, include_source: bool = True
+        self, chunk_size: int = 1536, overlap: int = 200, include_source: bool = True
     ):
         """Initialize the code chunker.
 

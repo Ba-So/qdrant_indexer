@@ -12,7 +12,14 @@ from typing import Callable
 
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker
 from qdrant_indexer.filters import filter_files
@@ -67,6 +74,7 @@ def model_to_vector_name(model_name: str) -> str:
     name = model_name.split("/")[-1].lower()
     return f"fast-{name}"
 
+
 # Progress callback type: (event, current, total, message)
 ProgressCallback = Callable[[str, int, int, str], None]
 
@@ -110,14 +118,16 @@ def _load_pdf_file(args: tuple) -> dict:
         # Convert to serializable format
         prepared_chunks = []
         for i, chunk in enumerate(chunks):
-            prepared_chunks.append({
-                "text": chunk,
-                "file_path": str(file_path),
-                "chunk_index": i,
-                "total_chunks": len(chunks),
-                "metadata": doc.metadata,
-                "symbol": None,
-            })
+            prepared_chunks.append(
+                {
+                    "text": chunk,
+                    "file_path": str(file_path),
+                    "chunk_index": i,
+                    "total_chunks": len(chunks),
+                    "metadata": doc.metadata,
+                    "symbol": None,
+                }
+            )
 
         return {
             "file_path": str(file_path),
@@ -162,6 +172,7 @@ def is_cuda_available() -> bool:
     """
     try:
         import onnxruntime as ort
+
         return "CUDAExecutionProvider" in ort.get_available_providers()
     except ImportError:
         return False
@@ -218,7 +229,11 @@ class QdrantIndexer:
 
         # Auto-detect CUDA from environment if not explicitly set
         if use_cuda is None:
-            use_cuda = os.environ.get("QDRANT_INDEXER_USE_CUDA", "").lower() in ("1", "true", "yes")
+            use_cuda = os.environ.get("QDRANT_INDEXER_USE_CUDA", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
 
         self.use_cuda = use_cuda
 
@@ -279,12 +294,7 @@ class QdrantIndexer:
         result = self.client.scroll(
             collection_name=self.collection,
             scroll_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="source",
-                        match=MatchValue(value=source)
-                    )
-                ]
+                must=[FieldCondition(key="source", match=MatchValue(value=source))]
             ),
             limit=10000,  # Reasonable limit
             with_payload=False,
@@ -341,9 +351,13 @@ class QdrantIndexer:
 
         # Check if this is a code document with symbols
         if doc.metadata.get("is_code") and "symbols" in doc.metadata:
-            return self._index_code_file(doc, file_path, chunker, batch_size, on_progress)
+            return self._index_code_file(
+                doc, file_path, chunker, batch_size, on_progress
+            )
         else:
-            return self._index_regular_file(doc, file_path, chunker, batch_size, on_progress)
+            return self._index_regular_file(
+                doc, file_path, chunker, batch_size, on_progress
+            )
 
     def _index_regular_file(
         self,
@@ -410,7 +424,12 @@ class QdrantIndexer:
                 points_batch = []
 
                 if on_progress:
-                    on_progress("upload", i + 1, total_chunks, f"Uploaded {i + 1}/{total_chunks}")
+                    on_progress(
+                        "upload",
+                        i + 1,
+                        total_chunks,
+                        f"Uploaded {i + 1}/{total_chunks}",
+                    )
 
         # Upload remaining points
         if points_batch:
@@ -478,7 +497,9 @@ class QdrantIndexer:
         chunk_texts = [chunk_text for chunk_text, _ in chunks_with_symbols]
         embeddings = list(self.embeddings.embed(chunk_texts))
 
-        for i, ((chunk_text, symbol), vector) in enumerate(zip(chunks_with_symbols, embeddings)):
+        for i, ((chunk_text, symbol), vector) in enumerate(
+            zip(chunks_with_symbols, embeddings)
+        ):
             point_id = self._generate_point_id(file_path, i)
             point_ids.append(point_id)
             payload = self._build_code_payload(
@@ -507,7 +528,12 @@ class QdrantIndexer:
                 points_batch = []
 
                 if on_progress:
-                    on_progress("upload", i + 1, total_chunks, f"Uploaded {i + 1}/{total_chunks}")
+                    on_progress(
+                        "upload",
+                        i + 1,
+                        total_chunks,
+                        f"Uploaded {i + 1}/{total_chunks}",
+                    )
 
         # Upload remaining points
         if points_batch:
@@ -548,9 +574,7 @@ class QdrantIndexer:
 
         return chunks_with_symbols
 
-    def _load_and_chunk_file(
-        self, file_path: Path, chunker: Chunker
-    ) -> LoadedFile:
+    def _load_and_chunk_file(self, file_path: Path, chunker: Chunker) -> LoadedFile:
         """Load a file and prepare chunks for embedding.
 
         This method is designed to be called in parallel threads.
@@ -669,7 +693,9 @@ class QdrantIndexer:
             logger.info(f"Skipped {len(skipped)} files due to exclusion patterns")
 
         patterns_str = ", ".join(patterns)
-        logger.info(f"Found {total_files_to_process} files matching patterns: {patterns_str}")
+        logger.info(
+            f"Found {total_files_to_process} files matching patterns: {patterns_str}"
+        )
 
         if on_progress:
             on_progress(
@@ -698,8 +724,8 @@ class QdrantIndexer:
         files_loaded = 0
 
         # Get chunker settings for PDF process pool
-        chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 512
-        overlap = chunker.overlap if hasattr(chunker, "overlap") else 50
+        chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 1536
+        overlap = chunker.overlap if hasattr(chunker, "overlap") else 200
 
         # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
         if pdf_files:
@@ -732,7 +758,9 @@ class QdrantIndexer:
                             )
                             for c in result["chunks"]
                         ]
-                        loaded_files.append(LoadedFile(file_path=file_path, chunks=chunks))
+                        loaded_files.append(
+                            LoadedFile(file_path=file_path, chunks=chunks)
+                        )
                         if on_progress:
                             on_progress(
                                 "file_loaded",
@@ -795,10 +823,14 @@ class QdrantIndexer:
             }
 
         total_chunks = len(all_chunks)
-        logger.info(f"Generating embeddings for {total_chunks} chunks (batch size: {embedding_batch_size})...")
+        logger.info(
+            f"Generating embeddings for {total_chunks} chunks (batch size: {embedding_batch_size})..."
+        )
 
         if on_progress:
-            on_progress("embedding", 0, total_chunks, f"Embedding {total_chunks} chunks...")
+            on_progress(
+                "embedding", 0, total_chunks, f"Embedding {total_chunks} chunks..."
+            )
 
         # Generate embeddings in batches to avoid GPU OOM
         chunk_texts = [c.text for c in all_chunks]
@@ -811,7 +843,12 @@ class QdrantIndexer:
 
             if on_progress:
                 completed = min(i + embedding_batch_size, total_chunks)
-                on_progress("embedding", completed, total_chunks, f"Embedding {completed}/{total_chunks} chunks...")
+                on_progress(
+                    "embedding",
+                    completed,
+                    total_chunks,
+                    f"Embedding {completed}/{total_chunks} chunks...",
+                )
 
         if on_progress:
             on_progress("embedding", total_chunks, total_chunks, "Embeddings complete")
@@ -853,7 +890,12 @@ class QdrantIndexer:
 
             # Update progress every 100 points
             if on_progress and (i + 1) % 100 == 0:
-                on_progress("preparing", i + 1, total_chunks, f"Preparing {i + 1}/{total_chunks} points...")
+                on_progress(
+                    "preparing",
+                    i + 1,
+                    total_chunks,
+                    f"Preparing {i + 1}/{total_chunks} points...",
+                )
 
         if on_progress:
             on_progress("preparing", total_chunks, total_chunks, "Points prepared")
@@ -883,7 +925,9 @@ class QdrantIndexer:
         if on_progress:
             on_progress("uploading", total_chunks, total_chunks, "Upload complete")
 
-        logger.info(f"Indexing complete: {len(loaded_files)} files, {total_chunks} chunks")
+        logger.info(
+            f"Indexing complete: {len(loaded_files)} files, {total_chunks} chunks"
+        )
         return {
             "total_files": len(loaded_files),
             "total_chunks": total_chunks,
@@ -931,7 +975,14 @@ class QdrantIndexer:
 
         # Discover current files
         if patterns is None:
-            patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php"]
+            patterns = [
+                "**/*.md",
+                "**/*.txt",
+                "**/*.pdf",
+                "**/*.rst",
+                "**/*.py",
+                "**/*.php",
+            ]
 
         all_files = []
         seen = set()
@@ -971,16 +1022,22 @@ class QdrantIndexer:
             if file_state is None:
                 # New file - must index
                 content_hash = compute_file_hash(file_path)
-                files_to_process.append((file_path, "new", content_hash, current_mtime, None))
+                files_to_process.append(
+                    (file_path, "new", content_hash, current_mtime, None)
+                )
             elif force:
                 # Forced re-index
                 content_hash = compute_file_hash(file_path)
-                files_to_process.append((file_path, "modified", content_hash, current_mtime, file_state))
+                files_to_process.append(
+                    (file_path, "modified", content_hash, current_mtime, file_state)
+                )
             elif file_state.mtime is None or current_mtime != file_state.mtime:
                 # Mtime changed or not tracked - compute hash to confirm
                 content_hash = compute_file_hash(file_path)
                 if file_state.content_hash != content_hash:
-                    files_to_process.append((file_path, "modified", content_hash, current_mtime, file_state))
+                    files_to_process.append(
+                        (file_path, "modified", content_hash, current_mtime, file_state)
+                    )
                 else:
                     # Mtime changed but content same (touched file)
                     # Update mtime in state to avoid future false positives
@@ -992,9 +1049,17 @@ class QdrantIndexer:
                 unchanged += 1
 
         # Phase 2: Index files that need processing
-        for i, (file_path, status, content_hash, current_mtime, file_state) in enumerate(files_to_process):
+        for i, (
+            file_path,
+            status,
+            content_hash,
+            current_mtime,
+            file_state,
+        ) in enumerate(files_to_process):
             if on_progress:
-                on_progress("sync_indexing", i + 1, len(files_to_process), file_path.name)
+                on_progress(
+                    "sync_indexing", i + 1, len(files_to_process), file_path.name
+                )
 
             abs_path = str(file_path.absolute())
             try:
@@ -1003,7 +1068,9 @@ class QdrantIndexer:
                     self.delete_points_by_ids(file_state.chunk_ids)
 
                 # Index file (don't pass on_progress to index_file to avoid confusing the sync progress)
-                chunk_count, chunk_ids = self.index_file(file_path, chunker, batch_size, None)
+                chunk_count, chunk_ids = self.index_file(
+                    file_path, chunker, batch_size, None
+                )
 
                 # Update state with mtime
                 new_state = IndexedFileState(

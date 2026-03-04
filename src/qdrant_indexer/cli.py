@@ -10,7 +10,14 @@ from qdrant_client import QdrantClient
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from qdrant_indexer.chunkers import RecursiveChunker
@@ -67,22 +74,89 @@ def display_success(message: str) -> None:
 @app.command()
 def index(
     path: Annotated[Path, typer.Argument(help="Directory to index")],
-    collection: Annotated[str, typer.Option("--collection", "-c", help="Collection name")],
-    url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
-    embedding_model: Annotated[str, typer.Option("--embedding-model", "-m", help="FastEmbed model for embeddings")] = DEFAULT_EMBEDDING_MODEL,
-    chunk_size: Annotated[int, typer.Option("--chunk-size", help="Chunk size in characters")] = 512,
-    chunk_overlap: Annotated[int, typer.Option("--chunk-overlap", help="Overlap between chunks")] = 50,
-    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files (can be repeated)")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php", "**/*.html", "**/*.htm"],
-    batch_size: Annotated[int, typer.Option("--batch-size", help="Batch size for uploads")] = 100,
-    exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)")] = None,
-    no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes", help="Don't use default exclusion patterns")] = False,
-    workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel workers for file loading")] = DEFAULT_WORKERS,
-    gpu: Annotated[bool, typer.Option("--gpu", "--cuda", help="Enable GPU/CUDA acceleration for embeddings")] = False,
-    embedding_batch_size: Annotated[int, typer.Option("--embedding-batch-size", help="Chunks to embed at once (lower = less GPU memory)")] = DEFAULT_EMBEDDING_BATCH_SIZE,
-    incremental: Annotated[bool, typer.Option("--incremental/--full", help="Incremental update (skip unchanged) vs full re-index")] = True,
-    state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location (default: .qdrant-index-state.json in directory)")] = None,
-    verbose: Annotated[int, typer.Option("--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)")] = 0,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
+    collection: Annotated[
+        str, typer.Option("--collection", "-c", help="Collection name")
+    ],
+    url: Annotated[
+        str, typer.Option("--url", "-u", help="Qdrant server URL")
+    ] = "http://localhost:6333",
+    embedding_model: Annotated[
+        str,
+        typer.Option("--embedding-model", "-m", help="FastEmbed model for embeddings"),
+    ] = DEFAULT_EMBEDDING_MODEL,
+    chunk_size: Annotated[
+        int, typer.Option("--chunk-size", help="Chunk size in characters")
+    ] = 1536,
+    chunk_overlap: Annotated[
+        int, typer.Option("--chunk-overlap", help="Overlap between chunks")
+    ] = 200,
+    pattern: Annotated[
+        list[str],
+        typer.Option(
+            "--pattern", "-p", help="Glob patterns for files (can be repeated)"
+        ),
+    ] = [
+        "**/*.md",
+        "**/*.txt",
+        "**/*.pdf",
+        "**/*.rst",
+        "**/*.py",
+        "**/*.php",
+        "**/*.html",
+        "**/*.htm",
+    ],
+    batch_size: Annotated[
+        int, typer.Option("--batch-size", help="Batch size for uploads")
+    ] = 100,
+    exclude: Annotated[
+        Optional[list[str]],
+        typer.Option("--exclude", "-e", help="Patterns to exclude (can be repeated)"),
+    ] = None,
+    no_default_excludes: Annotated[
+        bool,
+        typer.Option(
+            "--no-default-excludes", help="Don't use default exclusion patterns"
+        ),
+    ] = False,
+    workers: Annotated[
+        int, typer.Option("--workers", "-w", help="Parallel workers for file loading")
+    ] = DEFAULT_WORKERS,
+    gpu: Annotated[
+        bool,
+        typer.Option(
+            "--gpu", "--cuda", help="Enable GPU/CUDA acceleration for embeddings"
+        ),
+    ] = False,
+    embedding_batch_size: Annotated[
+        int,
+        typer.Option(
+            "--embedding-batch-size",
+            help="Chunks to embed at once (lower = less GPU memory)",
+        ),
+    ] = DEFAULT_EMBEDDING_BATCH_SIZE,
+    incremental: Annotated[
+        bool,
+        typer.Option(
+            "--incremental/--full",
+            help="Incremental update (skip unchanged) vs full re-index",
+        ),
+    ] = True,
+    state_file: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--state-file",
+            help="Custom state file location (default: .qdrant-index-state.json in directory)",
+        ),
+    ] = None,
+    verbose: Annotated[
+        int,
+        typer.Option(
+            "--verbose", "-v", count=True, help="Increase verbosity (-v, -vv)"
+        ),
+    ] = 0,
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="Suppress non-error output")
+    ] = False,
 ) -> None:
     """Index a directory into a Qdrant collection.
 
@@ -131,9 +205,13 @@ def index(
         # Check GPU availability if requested
         if gpu and not quiet:
             if is_cuda_available():
-                console.print("[green]✓[/green] CUDA available - GPU acceleration enabled")
+                console.print(
+                    "[green]✓[/green] CUDA available - GPU acceleration enabled"
+                )
             else:
-                console.print("[yellow]⚠[/yellow] CUDA not available - falling back to CPU")
+                console.print(
+                    "[yellow]⚠[/yellow] CUDA not available - falling back to CPU"
+                )
 
         # Initialize indexer (shows spinner during model loading)
         with Progress(
@@ -142,7 +220,9 @@ def index(
             console=console,
             disable=quiet,
         ) as progress:
-            init_task = progress.add_task(f"Loading embedding model ({embedding_model})...", total=None)
+            init_task = progress.add_task(
+                f"Loading embedding model ({embedding_model})...", total=None
+            )
 
             indexer = QdrantIndexer(
                 qdrant_url=url,
@@ -172,7 +252,11 @@ def index(
         if incremental:
             # Incremental mode: use sync_directory
             if not quiet:
-                mode_msg = "[cyan]incremental[/cyan]" if not state_file else f"[cyan]incremental[/cyan] (state: {state_file})"
+                mode_msg = (
+                    "[cyan]incremental[/cyan]"
+                    if not state_file
+                    else f"[cyan]incremental[/cyan] (state: {state_file})"
+                )
                 console.print(f"Mode: {mode_msg}")
 
             with Progress(
@@ -186,16 +270,35 @@ def index(
             ) as progress:
                 task = progress.add_task("Discovering files...", total=None)
 
-                def on_sync_progress(event: str, current: int, total: int, message: str) -> None:
+                def on_sync_progress(
+                    event: str, current: int, total: int, message: str
+                ) -> None:
                     """Handle progress updates from sync_directory."""
                     if event == "sync_discovery":
-                        progress.update(task, description=f"Found {total} files", total=total, completed=0)
+                        progress.update(
+                            task,
+                            description=f"Found {total} files",
+                            total=total,
+                            completed=0,
+                        )
                     elif event == "sync_checking":
-                        progress.update(task, description=f"Checking: {message}", completed=current)
+                        progress.update(
+                            task, description=f"Checking: {message}", completed=current
+                        )
                     elif event == "sync_indexing":
-                        progress.update(task, description=f"Indexing: {message}", total=total, completed=current)
+                        progress.update(
+                            task,
+                            description=f"Indexing: {message}",
+                            total=total,
+                            completed=current,
+                        )
                     elif event == "sync_deleting":
-                        progress.update(task, description=f"Removing: {message}", total=total, completed=current)
+                        progress.update(
+                            task,
+                            description=f"Removing: {message}",
+                            total=total,
+                            completed=current,
+                        )
 
                 result = indexer.sync_directory(
                     path=path,
@@ -227,31 +330,74 @@ def index(
             ) as progress:
                 task = progress.add_task("Discovering files...", total=None)
 
-                def on_progress(event: str, current: int, total: int, message: str) -> None:
+                def on_progress(
+                    event: str, current: int, total: int, message: str
+                ) -> None:
                     """Handle progress updates from indexer."""
                     if event == "discovery":
-                        progress.update(task, description=f"Found {total} files", total=total, completed=0)
+                        progress.update(
+                            task,
+                            description=f"Found {total} files",
+                            total=total,
+                            completed=0,
+                        )
                     elif event == "loading":
-                        progress.update(task, description="Loading files...", total=total, completed=current)
+                        progress.update(
+                            task,
+                            description="Loading files...",
+                            total=total,
+                            completed=current,
+                        )
                     elif event == "file_loaded":
-                        progress.update(task, description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}", completed=current)
+                        progress.update(
+                            task,
+                            description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}",
+                            completed=current,
+                        )
                     elif event == "file_error":
                         progress.update(task, completed=current)
                     elif event == "embedding":
                         if current == 0:
-                            progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
+                            progress.update(
+                                task,
+                                description=f"Embedding {total} chunks...",
+                                total=total,
+                                completed=0,
+                            )
                         else:
-                            progress.update(task, description=f"Embedding ({current}/{total})", completed=current)
+                            progress.update(
+                                task,
+                                description=f"Embedding ({current}/{total})",
+                                completed=current,
+                            )
                     elif event == "preparing":
                         if current == 0:
-                            progress.update(task, description="Preparing points...", total=total, completed=0)
+                            progress.update(
+                                task,
+                                description="Preparing points...",
+                                total=total,
+                                completed=0,
+                            )
                         else:
-                            progress.update(task, description=f"Preparing ({current}/{total})", completed=current)
+                            progress.update(
+                                task,
+                                description=f"Preparing ({current}/{total})",
+                                completed=current,
+                            )
                     elif event == "uploading":
                         if current == 0:
-                            progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)
+                            progress.update(
+                                task,
+                                description="Uploading to Qdrant...",
+                                total=total,
+                                completed=0,
+                            )
                         else:
-                            progress.update(task, description=f"Uploading ({current}/{total})", completed=current)
+                            progress.update(
+                                task,
+                                description=f"Uploading ({current}/{total})",
+                                completed=current,
+                            )
 
                 # Run parallel indexing
                 result = indexer.index_directory(
@@ -265,7 +411,9 @@ def index(
                     embedding_batch_size=embedding_batch_size,
                 )
 
-                progress.update(task, description="Complete", completed=result["total_chunks"])
+                progress.update(
+                    task, description="Complete", completed=result["total_chunks"]
+                )
 
         elapsed = time.time() - start_time
 
@@ -285,20 +433,34 @@ def index(
                     summary.add_row("Files failed:", f"[red]{len(result.failed)}[/red]")
             else:
                 # Display full index summary
-                summary.add_row("Files indexed:", f"[cyan]{result['total_files']}[/cyan]")
-                summary.add_row("Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]")
+                summary.add_row(
+                    "Files indexed:", f"[cyan]{result['total_files']}[/cyan]"
+                )
+                summary.add_row(
+                    "Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]"
+                )
                 if result["skipped_files"]:
-                    summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
+                    summary.add_row(
+                        "Files skipped:", f"[dim]{result['skipped_files']}[/dim]"
+                    )
                 summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
                 if result["failed_files"]:
-                    summary.add_row("Failed files:", f"[red]{len(result['failed_files'])}[/red]")
+                    summary.add_row(
+                        "Failed files:", f"[red]{len(result['failed_files'])}[/red]"
+                    )
 
             if gpu:
-                gpu_status = "[green]Yes[/green]" if indexer.use_cuda and is_cuda_available() else "[yellow]No (fallback)[/yellow]"
+                gpu_status = (
+                    "[green]Yes[/green]"
+                    if indexer.use_cuda and is_cuda_available()
+                    else "[yellow]No (fallback)[/yellow]"
+                )
                 summary.add_row("GPU:", gpu_status)
             summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
 
-            console.print(Panel(summary, title="Indexing Complete", border_style="green"))
+            console.print(
+                Panel(summary, title="Indexing Complete", border_style="green")
+            )
 
             # Display failed files
             if incremental and result.failed:
@@ -318,9 +480,24 @@ def index(
 @app.command()
 def status(
     path: Annotated[Path, typer.Argument(help="Directory to check status for")],
-    state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location")] = None,
-    pattern: Annotated[list[str], typer.Option("--pattern", "-p", help="Glob patterns for files")] = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst", "**/*.py", "**/*.php", "**/*.html", "**/*.htm"],
-    exclude: Annotated[Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude")] = None,
+    state_file: Annotated[
+        Optional[Path], typer.Option("--state-file", help="Custom state file location")
+    ] = None,
+    pattern: Annotated[
+        list[str], typer.Option("--pattern", "-p", help="Glob patterns for files")
+    ] = [
+        "**/*.md",
+        "**/*.txt",
+        "**/*.pdf",
+        "**/*.rst",
+        "**/*.py",
+        "**/*.php",
+        "**/*.html",
+        "**/*.htm",
+    ],
+    exclude: Annotated[
+        Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude")
+    ] = None,
     no_default_excludes: Annotated[bool, typer.Option("--no-default-excludes")] = False,
 ) -> None:
     """Show indexing status for a directory.
@@ -371,7 +548,12 @@ def status(
     if not no_default_excludes:
         exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
 
-    files, _ = filter_files(all_files, path, exclude_patterns if exclude_patterns else None, use_defaults=False)
+    files, _ = filter_files(
+        all_files,
+        path,
+        exclude_patterns if exclude_patterns else None,
+        use_defaults=False,
+    )
 
     # Analyze status
     current_paths = {str(f.absolute()) for f in files}
@@ -431,12 +613,22 @@ def status(
 @app.command()
 def clean(
     path: Annotated[Path, typer.Argument(help="Directory to clean")],
-    collection: Annotated[str, typer.Option("--collection", "-c", help="Collection name")],
-    url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
-    state_file: Annotated[Optional[Path], typer.Option("--state-file", help="Custom state file location")] = None,
-    all: Annotated[bool, typer.Option("--all", help="Remove all entries for this path (reset)")] = False,
+    collection: Annotated[
+        str, typer.Option("--collection", "-c", help="Collection name")
+    ],
+    url: Annotated[
+        str, typer.Option("--url", "-u", help="Qdrant server URL")
+    ] = "http://localhost:6333",
+    state_file: Annotated[
+        Optional[Path], typer.Option("--state-file", help="Custom state file location")
+    ] = None,
+    all: Annotated[
+        bool, typer.Option("--all", help="Remove all entries for this path (reset)")
+    ] = False,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="Suppress non-error output")
+    ] = False,
 ) -> None:
     """Clean database entries for a directory.
 
@@ -498,15 +690,21 @@ def clean(
                 except Exception as e:
                     failed.append(f"{file_path_str}: {e}")
                     if not quiet:
-                        console.print(f"[red]Error removing {Path(file_path_str).name}: {e}[/red]")
+                        console.print(
+                            f"[red]Error removing {Path(file_path_str).name}: {e}[/red]"
+                        )
 
             # Remove state file
             state_file.unlink()
 
             if not quiet:
                 if failed:
-                    console.print(f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]")
-                display_success(f"Removed {total_deleted} points and deleted state file")
+                    console.print(
+                        f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]"
+                    )
+                display_success(
+                    f"Removed {total_deleted} points and deleted state file"
+                )
 
         else:
             # Remove only deleted files
@@ -538,14 +736,20 @@ def clean(
                     except Exception as e:
                         failed.append(f"{file_path_str}: {e}")
                         if not quiet:
-                            console.print(f"[red]Error removing {Path(file_path_str).name}: {e}[/red]")
+                            console.print(
+                                f"[red]Error removing {Path(file_path_str).name}: {e}[/red]"
+                            )
 
             state.save()
 
             if not quiet:
                 if failed:
-                    console.print(f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]")
-                display_success(f"Removed {total_deleted} points from {len(deleted_files)} deleted files")
+                    console.print(
+                        f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]"
+                    )
+                display_success(
+                    f"Removed {total_deleted} points from {len(deleted_files)} deleted files"
+                )
 
     except typer.Abort:
         if not quiet:
@@ -558,8 +762,12 @@ def clean(
 
 @app.command("list-collections")
 def list_collections(
-    url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
+    url: Annotated[
+        str, typer.Option("--url", "-u", help="Qdrant server URL")
+    ] = "http://localhost:6333",
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="Suppress non-error output")
+    ] = False,
 ) -> None:
     """List all Qdrant collections with their point counts."""
     global _quiet
@@ -589,7 +797,9 @@ def list_collections(
                     vector_size = str(vectors.size)
                 elif isinstance(vectors, dict):
                     # Named vectors - get sizes from all vector configs
-                    sizes = [str(v.size) for v in vectors.values() if hasattr(v, "size")]
+                    sizes = [
+                        str(v.size) for v in vectors.values() if hasattr(v, "size")
+                    ]
                     vector_size = ", ".join(sizes) if sizes else "-"
 
             table.add_row(
@@ -608,9 +818,13 @@ def list_collections(
 @app.command("delete-collection")
 def delete_collection(
     collection: Annotated[str, typer.Argument(help="Collection name to delete")],
-    url: Annotated[str, typer.Option("--url", "-u", help="Qdrant server URL")] = "http://localhost:6333",
+    url: Annotated[
+        str, typer.Option("--url", "-u", help="Qdrant server URL")
+    ] = "http://localhost:6333",
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation")] = False,
-    quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress non-error output")] = False,
+    quiet: Annotated[
+        bool, typer.Option("--quiet", "-q", help="Suppress non-error output")
+    ] = False,
 ) -> None:
     """Delete a Qdrant collection."""
     global _quiet
@@ -652,7 +866,10 @@ def show_excludes() -> None:
 
 @app.command("list-models")
 def list_models(
-    search: Annotated[Optional[str], typer.Argument(help="Filter models by name (e.g., 'jina', 'multilingual')")] = None,
+    search: Annotated[
+        Optional[str],
+        typer.Argument(help="Filter models by name (e.g., 'jina', 'multilingual')"),
+    ] = None,
 ) -> None:
     """List available FastEmbed embedding models.
 

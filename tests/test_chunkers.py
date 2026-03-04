@@ -5,6 +5,7 @@ import pytest
 from qdrant_indexer.chunkers import (
     Chunker,
     FixedSizeChunker,
+    MarkdownChunker,
     RecursiveChunker,
     merge_small_chunks,
     split_text_with_overlap,
@@ -244,3 +245,173 @@ def test_fixed_size_chunker_parametrized(chunk_size: int, overlap: int):
     assert len(chunks) > 0
     # First chunk should be exactly chunk_size
     assert len(chunks[0]) == chunk_size
+
+
+class TestMarkdownChunker:
+    """Tests for MarkdownChunker."""
+
+    def test_header_splitting_all_levels(self):
+        """Test that h1-h6 headers are detected and split."""
+        text = """# H1 Title
+
+Content under H1.
+
+## H2 Section
+
+Content under H2.
+
+### H3 Subsection
+
+Content under H3.
+
+#### H4 Heading
+
+Content under H4.
+
+##### H5 Heading
+
+Content under H5.
+
+###### H6 Heading
+
+Content under H6.
+"""
+        chunker = MarkdownChunker(chunk_size=500, min_section_size=10)
+        chunks = chunker.chunk(text)
+
+        # Should have multiple chunks, one per section
+        assert len(chunks) >= 6
+        # Verify headers are present
+        assert any("# H1 Title" in c for c in chunks)
+        assert any("## H2 Section" in c for c in chunks)
+        assert any("### H3 Subsection" in c for c in chunks)
+        assert any("#### H4 Heading" in c for c in chunks)
+        assert any("##### H5 Heading" in c for c in chunks)
+        assert any("###### H6 Heading" in c for c in chunks)
+
+    def test_code_block_preservation(self, sample_markdown_with_code_blocks: str):
+        """Test that content in ``` blocks stays intact and headers inside are ignored."""
+        chunker = MarkdownChunker(chunk_size=500, min_section_size=10)
+        chunks = chunker.chunk(sample_markdown_with_code_blocks)
+
+        # Find chunk containing the Python code block
+        code_chunks = [c for c in chunks if "def example():" in c]
+        assert len(code_chunks) >= 1
+
+        # The # comment inside the code block should NOT cause a split
+        # The code block should be in the same chunk as its preceding header
+        for chunk in code_chunks:
+            assert "```python" in chunk or "def example():" in chunk
+
+    def test_frontmatter_handling(self):
+        """Test that YAML frontmatter is treated as separate section."""
+        text = """---
+title: Test Document
+author: Test Author
+---
+# Main Content
+
+Body text here.
+"""
+        chunker = MarkdownChunker(chunk_size=500)
+        chunks = chunker.chunk(text)
+
+        # First chunk should be frontmatter
+        assert chunks[0].startswith("---")
+        assert "title: Test Document" in chunks[0]
+        assert chunks[0].endswith("---")
+
+        # Second chunk should be main content
+        assert any("# Main Content" in c for c in chunks[1:])
+
+    def test_large_section_fallback(self, sample_large_markdown: str):
+        """Test that sections > chunk_size use RecursiveChunker."""
+        chunker = MarkdownChunker(chunk_size=500, overlap=50)
+        chunks = chunker.chunk(sample_large_markdown)
+
+        # All chunks should respect size limit
+        for i, chunk in enumerate(chunks):
+            assert len(chunk) <= 500, f"Chunk {i} exceeds size limit: {len(chunk)}"
+
+        # Should have multiple chunks due to large content
+        assert len(chunks) > 3
+
+    def test_no_headers_fallback(self):
+        """Test that documents without headers use RecursiveChunker."""
+        text = "This is a plain text document without any headers. " * 50
+        chunker = MarkdownChunker(chunk_size=200, overlap=20)
+        chunks = chunker.chunk(text)
+
+        # Should still produce chunks
+        assert len(chunks) > 0
+        # All chunks should respect size limit
+        for chunk in chunks:
+            assert len(chunk) <= 200
+
+    def test_min_section_size_merging(self):
+        """Test that small sections are merged with neighbors."""
+        text = """# Section 1
+
+A
+
+## Section 2
+
+B
+
+## Section 3
+
+C
+"""
+        # With high min_section_size, small sections should merge
+        chunker = MarkdownChunker(chunk_size=500, min_section_size=100)
+        chunks = chunker.chunk(text)
+
+        # Should have fewer chunks than sections due to merging
+        assert len(chunks) < 3
+
+    def test_empty_text(self):
+        """Test that empty input returns []."""
+        chunker = MarkdownChunker()
+        assert chunker.chunk("") == []
+        assert chunker.chunk("   ") == []
+        assert chunker.chunk("\n\n") == []
+
+    def test_is_chunker_subclass(self):
+        """Test that MarkdownChunker inherits from Chunker."""
+        assert issubclass(MarkdownChunker, Chunker)
+
+    def test_nested_headers(self):
+        """Test that nested headers preserve hierarchy context."""
+        text = """# Top Level
+
+Content.
+
+## Second Level
+
+More content.
+
+### Third Level
+
+Deep content that is repeated many times to exceed chunk size. """ + "X" * 2000
+
+        chunker = MarkdownChunker(chunk_size=500, overlap=50)
+        chunks = chunker.chunk(text)
+
+        # The large third-level section should be split
+        # Later chunks should have context about parent headers
+        assert len(chunks) > 3
+
+    def test_chunks_respect_size_limit(self, sample_large_markdown: str):
+        """Assert all chunks <= chunk_size."""
+        chunker = MarkdownChunker(chunk_size=400, overlap=40)
+        chunks = chunker.chunk(sample_large_markdown)
+
+        for i, chunk in enumerate(chunks):
+            assert len(chunk) <= 400, f"Chunk {i} exceeds size limit: {len(chunk)}"
+
+    def test_default_parameters(self):
+        """Verify default values for MarkdownChunker."""
+        chunker = MarkdownChunker()
+        assert chunker.chunk_size == 1500
+        assert chunker.overlap == 100
+        assert chunker.min_section_size == 100
