@@ -1,14 +1,20 @@
 """Tests for text chunkers."""
 
+from pathlib import Path
+
 import pytest
 
 from qdrant_indexer.chunkers import (
+    CHUNKERS,
     Chunker,
+    CodeChunker,
     FixedSizeChunker,
     HTMLChunker,
     MarkdownChunker,
     RecursiveChunker,
     SemanticChunker,
+    get_chunker,
+    get_chunker_for_file,
     merge_small_chunks,
     split_text_with_overlap,
 )
@@ -956,3 +962,96 @@ class TestSemanticChunker:
         # (though this isn't strictly guaranteed due to merging)
         assert len(chunks_high) >= 1
         assert len(chunks_low) >= 1
+
+
+class TestGetChunker:
+    """Tests for get_chunker factory function."""
+
+    def test_returns_recursive_chunker(self):
+        chunker = get_chunker("recursive")
+        assert isinstance(chunker, RecursiveChunker)
+
+    def test_returns_fixed_size_chunker(self):
+        chunker = get_chunker("fixed")
+        assert isinstance(chunker, FixedSizeChunker)
+
+    def test_returns_markdown_chunker(self):
+        chunker = get_chunker("markdown")
+        assert isinstance(chunker, MarkdownChunker)
+
+    def test_returns_html_chunker(self):
+        chunker = get_chunker("html")
+        assert isinstance(chunker, HTMLChunker)
+
+    def test_returns_semantic_chunker(self):
+        chunker = get_chunker("semantic")
+        assert isinstance(chunker, SemanticChunker)
+
+    def test_returns_code_chunker(self):
+        chunker = get_chunker("code")
+        assert isinstance(chunker, CodeChunker)
+
+    def test_passes_kwargs_to_chunker(self):
+        chunker = get_chunker("recursive", chunk_size=500, overlap=50)
+        assert chunker.chunk_size == 500
+        assert chunker.overlap == 50
+
+    def test_raises_value_error_for_unknown_strategy(self):
+        with pytest.raises(ValueError, match="Unknown chunker strategy"):
+            get_chunker("nonexistent")
+
+    def test_raises_value_error_for_auto_strategy(self):
+        with pytest.raises(ValueError, match="requires a file path"):
+            get_chunker("auto")
+
+
+class TestGetChunkerForFile:
+    """Tests for get_chunker_for_file factory function."""
+
+    def test_markdown_file_returns_markdown_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.md")
+        assert isinstance(chunker, MarkdownChunker)
+
+    def test_html_file_returns_html_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.html")
+        assert isinstance(chunker, HTMLChunker)
+
+    def test_pdf_file_returns_semantic_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.pdf")
+        assert isinstance(chunker, SemanticChunker)
+
+    def test_python_file_returns_code_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.py")
+        assert isinstance(chunker, CodeChunker)
+
+    def test_php_file_returns_code_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.php")
+        assert isinstance(chunker, CodeChunker)
+
+    def test_rust_file_returns_code_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.rs")
+        assert isinstance(chunker, CodeChunker)
+
+    def test_txt_file_returns_recursive_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.txt")
+        assert isinstance(chunker, RecursiveChunker)
+
+    def test_unknown_extension_returns_recursive_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.unknown")
+        assert isinstance(chunker, RecursiveChunker)
+
+    def test_passes_kwargs_to_chunker(self, tmp_path: Path):
+        chunker = get_chunker_for_file(tmp_path / "test.md", chunk_size=500)
+        assert chunker.chunk_size == 500
+
+
+class TestChunkersRegistry:
+    """Tests for CHUNKERS registry."""
+
+    def test_contains_all_strategies(self):
+        expected = {"recursive", "fixed", "markdown", "html", "semantic", "code"}
+        assert set(CHUNKERS.keys()) == expected
+
+    def test_all_values_are_chunker_subclasses(self):
+        for name, cls in CHUNKERS.items():
+            assert issubclass(cls, Chunker), f"{name} is not a Chunker subclass"

@@ -3,6 +3,7 @@
 import logging
 import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import numpy as np
 from bs4 import BeautifulSoup, Tag
@@ -1191,3 +1192,60 @@ class SemanticChunker(Chunker):
 
         # Enforce size constraints
         return self._enforce_size_constraints(chunks)
+
+
+# Chunker strategy registry
+CHUNKERS: dict[str, type[Chunker]] = {
+    "recursive": RecursiveChunker,
+    "fixed": FixedSizeChunker,
+    "markdown": MarkdownChunker,
+    "html": HTMLChunker,
+    "semantic": SemanticChunker,
+    "code": CodeChunker,
+}
+
+
+def get_chunker(strategy: str, **kwargs) -> Chunker:
+    """Get a chunker instance by strategy name.
+
+    Args:
+        strategy: Chunker strategy name. One of: 'recursive', 'fixed',
+                  'markdown', 'html', 'semantic', 'code'.
+        **kwargs: Arguments to pass to the chunker constructor.
+
+    Returns:
+        Configured chunker instance.
+
+    Raises:
+        ValueError: If strategy is unknown or 'auto' (which requires file_path).
+    """
+    if strategy == "auto":
+        raise ValueError(
+            "Strategy 'auto' requires a file path. Use get_chunker_for_file() instead."
+        )
+
+    if strategy not in CHUNKERS:
+        valid = ", ".join(sorted(CHUNKERS.keys()))
+        raise ValueError(f"Unknown chunker strategy '{strategy}'. Valid: {valid}")
+
+    return CHUNKERS[strategy](**kwargs)
+
+
+def get_chunker_for_file(file_path: Path, **kwargs) -> Chunker:
+    """Get the appropriate chunker for a file based on its type.
+
+    Uses the loader's preferred_chunker attribute to determine the best
+    chunking strategy for the file type.
+
+    Args:
+        file_path: Path to the file (used to determine type).
+        **kwargs: Arguments to pass to the chunker constructor.
+
+    Returns:
+        Configured chunker instance appropriate for the file type.
+    """
+    from qdrant_indexer.loaders import get_loader
+
+    loader = get_loader(file_path)
+    strategy = loader.preferred_chunker
+    return get_chunker(strategy, **kwargs)

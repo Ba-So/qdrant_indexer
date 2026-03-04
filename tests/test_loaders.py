@@ -442,3 +442,41 @@ class TestHTMLDocAutoDetection:
         loader = HTMLLoader()
         doc = loader.load(sample_html_file)
         assert "doc_type" not in doc.metadata
+
+
+class TestPreferredChunker:
+    """Tests for preferred_chunker class attribute."""
+
+    def test_markdown_loader_preferred_chunker(self):
+        assert MarkdownLoader.preferred_chunker == "markdown"
+
+    def test_text_loader_preferred_chunker(self):
+        assert TextLoader.preferred_chunker == "recursive"
+
+    def test_pdf_loader_preferred_chunker(self):
+        assert PDFLoader.preferred_chunker == "semantic"
+
+    def test_rst_loader_preferred_chunker(self):
+        assert ReStructuredTextLoader.preferred_chunker == "recursive"
+
+    def test_html_loader_preferred_chunker(self):
+        assert HTMLLoader.preferred_chunker == "html"
+
+    def test_rustdoc_loader_preferred_chunker(self):
+        assert RustdocLoader.preferred_chunker == "html"
+
+    def test_code_loaders_preferred_chunker(self):
+        from qdrant_indexer.code_loaders import (
+            CodeLoader,
+            PHPCodeLoader,
+            PythonCodeLoader,
+            RustCodeLoader,
+        )
+
+        assert CodeLoader.preferred_chunker == "code"
+        assert PythonCodeLoader.preferred_chunker == "code"
+        assert PHPCodeLoader.preferred_chunker == "code"
+        assert RustCodeLoader.preferred_chunker == "code"
+
+    def test_document_loader_default_preferred_chunker(self):
+        assert DocumentLoader.preferred_chunker == "recursive"
