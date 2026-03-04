@@ -16,6 +16,8 @@ from qdrant_indexer.models import Document
 class DocumentLoader(ABC):
     """Abstract base class for document loaders."""
 
+    preferred_chunker: ClassVar[str] = "recursive"  # Default fallback
+
     @abstractmethod
     def load(self, path: Path) -> Document:
         """Load a document from the given path.
@@ -31,6 +33,8 @@ class DocumentLoader(ABC):
 
 class MarkdownLoader(DocumentLoader):
     """Loader for Markdown files with YAML frontmatter support."""
+
+    preferred_chunker: ClassVar[str] = "markdown"
 
     def load(self, path: Path) -> Document:
         """Load a Markdown file, extracting frontmatter as metadata."""
@@ -48,6 +52,8 @@ class MarkdownLoader(DocumentLoader):
 
 class TextLoader(DocumentLoader):
     """Loader for plain text files."""
+
+    preferred_chunker: ClassVar[str] = "recursive"
 
     def load(self, path: Path) -> Document:
         """Load a plain text file with basic metadata."""
@@ -68,6 +74,8 @@ class TextLoader(DocumentLoader):
 
 class PDFLoader(DocumentLoader):
     """Loader for PDF files using pymupdf4llm for LLM-optimized extraction."""
+
+    preferred_chunker: ClassVar[str] = "semantic"
 
     # Standard PDF metadata keys to extract
     PDF_METADATA_KEYS = [
@@ -209,6 +217,8 @@ class PDFLoader(DocumentLoader):
 class ReStructuredTextLoader(DocumentLoader):
     """Loader for ReStructuredText files."""
 
+    preferred_chunker: ClassVar[str] = "recursive"
+
     def load(self, path: Path) -> Document:
         """Load an RST file with basic metadata."""
         content = path.read_text(encoding="utf-8")
@@ -244,6 +254,8 @@ class HTMLLoader(DocumentLoader):
     Automatically detects and delegates to specialized doc loaders (e.g., RustdocLoader)
     based on HTML content markers. See HTML_DOC_LOADERS registry.
     """
+
+    preferred_chunker: ClassVar[str] = "html"
 
     # Tags to remove for clean text extraction
     UNWANTED_TAGS = ["script", "style", "nav", "noscript", "iframe", "svg"]

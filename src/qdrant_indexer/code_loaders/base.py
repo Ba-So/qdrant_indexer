@@ -2,6 +2,7 @@
 
 from abc import abstractmethod
 from pathlib import Path
+from typing import ClassVar
 
 from qdrant_indexer.loaders import DocumentLoader
 from qdrant_indexer.models import CodeSymbol, Document
@@ -18,6 +19,8 @@ class CodeLoader(DocumentLoader):
         - extract_symbols: Parse source code and extract CodeSymbol objects
         - get_symbol_context: Format a symbol for embedding/search
     """
+
+    preferred_chunker: ClassVar[str] = "code"
 
     @abstractmethod
     def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:
