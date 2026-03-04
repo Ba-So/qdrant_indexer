@@ -28,7 +28,7 @@ class RecursiveChunker(Chunker):
     paragraphs -> lines -> sentences -> words.
     """
 
-    def __init__(self, chunk_size: int = 512, overlap: int = 50):
+    def __init__(self, chunk_size: int = 1532, overlap: int = 200):
         """Initialize the chunker.
 
         Args:
@@ -111,7 +111,11 @@ class RecursiveChunker(Chunker):
             current_chunk = chunks[i]
 
             # Get overlap from end of previous chunk
-            overlap_text = prev_chunk[-self.overlap :] if len(prev_chunk) >= self.overlap else prev_chunk
+            overlap_text = (
+                prev_chunk[-self.overlap :]
+                if len(prev_chunk) >= self.overlap
+                else prev_chunk
+            )
 
             # Prepend overlap to current chunk
             merged = overlap_text + current_chunk
@@ -180,7 +184,9 @@ def split_text_with_overlap(text: str, size: int, overlap: int) -> list[str]:
     return chunks
 
 
-def merge_small_chunks(chunks: list[str], min_size: int, max_size: int | None = None) -> list[str]:
+def merge_small_chunks(
+    chunks: list[str], min_size: int, max_size: int | None = None
+) -> list[str]:
     """Merge consecutive chunks that are smaller than min_size.
 
     Args:
@@ -229,7 +235,7 @@ class CodeChunker(Chunker):
     """
 
     def __init__(
-        self, chunk_size: int = 512, overlap: int = 50, include_source: bool = True
+        self, chunk_size: int = 1532, overlap: int = 200, include_source: bool = True
     ):
         """Initialize the code chunker.
 
@@ -300,9 +306,7 @@ class CodeChunker(Chunker):
                 remaining = symbol.content[remaining_space:]
             else:
                 # Header alone is too large, split it
-                chunks = split_text_with_overlap(
-                    header, self.chunk_size, self.overlap
-                )
+                chunks = split_text_with_overlap(header, self.chunk_size, self.overlap)
                 remaining = symbol.content
 
             # Split remaining source code
@@ -319,9 +323,7 @@ class CodeChunker(Chunker):
 
         return chunks
 
-    def chunk_symbols(
-        self, symbols: list[CodeSymbol]
-    ) -> list[tuple[str, CodeSymbol]]:
+    def chunk_symbols(self, symbols: list[CodeSymbol]) -> list[tuple[str, CodeSymbol]]:
         """Chunk a list of code symbols.
 
         Args:

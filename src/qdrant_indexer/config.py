@@ -27,8 +27,8 @@ class ChunkingConfig:
     """Text chunking configuration."""
 
     strategy: str = "recursive"
-    chunk_size: int = 512
-    chunk_overlap: int = 50
+    chunk_size: int = 1536
+    chunk_overlap: int = 200
 
 
 @dataclass
@@ -129,7 +129,9 @@ def _parse_config(data: dict[str, Any]) -> Config:
         config.chunking = ChunkingConfig(
             strategy=chunk_data.get("strategy", config.chunking.strategy),
             chunk_size=chunk_data.get("chunk_size", config.chunking.chunk_size),
-            chunk_overlap=chunk_data.get("chunk_overlap", config.chunking.chunk_overlap),
+            chunk_overlap=chunk_data.get(
+                "chunk_overlap", config.chunking.chunk_overlap
+            ),
         )
 
     if "indexing" in data:
@@ -137,7 +139,9 @@ def _parse_config(data: dict[str, Any]) -> Config:
         config.indexing = IndexingConfig(
             batch_size=index_data.get("batch_size", config.indexing.batch_size),
             pattern=index_data.get("pattern", config.indexing.pattern),
-            exclude_patterns=index_data.get("exclude_patterns", config.indexing.exclude_patterns),
+            exclude_patterns=index_data.get(
+                "exclude_patterns", config.indexing.exclude_patterns
+            ),
         )
 
     return config

@@ -196,23 +196,28 @@ class TestChunkerDefaults:
     def test_recursive_chunker_defaults(self):
         """Verify default values for RecursiveChunker."""
         chunker = RecursiveChunker()
-        assert chunker.chunk_size == 512
-        assert chunker.overlap == 50
+        assert chunker.chunk_size == 1536
+        assert chunker.overlap == 200
 
     def test_fixed_size_chunker_defaults(self):
         """Verify default values for FixedSizeChunker."""
         chunker = FixedSizeChunker()
-        assert chunker.chunk_size == 512
-        assert chunker.overlap == 50
+        assert chunker.chunk_size == 1536
+        assert chunker.overlap == 200
 
 
-@pytest.mark.parametrize("chunk_size,overlap", [
-    (100, 10),
-    (200, 20),
-    (500, 50),
-    (1000, 100),
-])
-def test_recursive_chunker_parametrized(chunk_size: int, overlap: int, sample_long_text: str):
+@pytest.mark.parametrize(
+    "chunk_size,overlap",
+    [
+        (100, 10),
+        (200, 20),
+        (500, 50),
+        (1000, 100),
+    ],
+)
+def test_recursive_chunker_parametrized(
+    chunk_size: int, overlap: int, sample_long_text: str
+):
     """Test RecursiveChunker with various configurations."""
     chunker = RecursiveChunker(chunk_size=chunk_size, overlap=overlap)
     chunks = chunker.chunk(sample_long_text)
@@ -222,11 +227,14 @@ def test_recursive_chunker_parametrized(chunk_size: int, overlap: int, sample_lo
         assert len(chunk) <= chunk_size
 
 
-@pytest.mark.parametrize("chunk_size,overlap", [
-    (50, 0),
-    (50, 10),
-    (100, 25),
-])
+@pytest.mark.parametrize(
+    "chunk_size,overlap",
+    [
+        (50, 0),
+        (50, 10),
+        (100, 25),
+    ],
+)
 def test_fixed_size_chunker_parametrized(chunk_size: int, overlap: int):
     """Test FixedSizeChunker with various configurations."""
     text = "X" * 200
