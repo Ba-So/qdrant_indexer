@@ -96,23 +96,34 @@ def _load_pdf_file(args: tuple) -> dict:
     via ProcessPoolExecutor.
 
     Args:
-        args: Tuple of (file_path_str, chunk_size, overlap)
+        args: Tuple of (file_path_str, chunk_size, overlap, chunker_strategy)
+              chunker_strategy can be "auto" or a specific strategy name.
 
     Returns:
-        Dict with 'file_path', 'chunks' (list of chunk dicts), and 'error'.
+        Dict with 'file_path', 'chunks' (list of chunk dicts), 'chunker_used', and 'error'.
     """
-    file_path_str, chunk_size, overlap = args
+    file_path_str, chunk_size, overlap, chunker_strategy = args
     file_path = Path(file_path_str)
 
     try:
         # Import here to avoid issues with process spawning
-        from qdrant_indexer.chunkers import RecursiveChunker
+        from qdrant_indexer.chunkers import get_chunker, get_chunker_for_file
         from qdrant_indexer.loaders import PDFLoader
 
         loader = PDFLoader()
         doc = loader.load(file_path)
 
-        chunker = RecursiveChunker(chunk_size=chunk_size, overlap=overlap)
+        # Select chunker based on strategy
+        if chunker_strategy == "auto":
+            chunker = get_chunker_for_file(
+                file_path, chunk_size=chunk_size, overlap=overlap
+            )
+        else:
+            chunker = get_chunker(
+                chunker_strategy, chunk_size=chunk_size, overlap=overlap
+            )
+
+        chunker_used = type(chunker).__name__
         chunks = chunker.chunk(doc.content)
 
         # Convert to serializable format
@@ -132,6 +143,7 @@ def _load_pdf_file(args: tuple) -> dict:
         return {
             "file_path": str(file_path),
             "chunks": prepared_chunks,
+            "chunker_used": chunker_used,
             "error": None,
         }
 
@@ -139,6 +151,7 @@ def _load_pdf_file(args: tuple) -> dict:
         return {
             "file_path": str(file_path),
             "chunks": [],
+            "chunker_used": None,
             "error": str(e),
         }
 
@@ -333,6 +346,8 @@ class QdrantIndexer:
         chunker: Chunker | None,
         batch_size: int = 100,
         on_progress: ProgressCallback | None = None,
+        chunk_size: int = 1536,
+        overlap: int = 200,
     ) -> tuple[int, list[int]]:
         """Index a single file into Qdrant.
 
@@ -341,6 +356,8 @@ class QdrantIndexer:
             chunker: Chunker instance to split the document, or None for auto-selection.
             batch_size: Number of points to upload per batch.
             on_progress: Optional callback for progress updates.
+            chunk_size: Chunk size for auto-selected chunker (used when chunker is None).
+            overlap: Overlap for auto-selected chunker (used when chunker is None).
 
         Returns:
             Tuple of (chunk_count, list of point IDs).
@@ -351,7 +368,12 @@ class QdrantIndexer:
 
         # Auto-select chunker based on file type if None
         if chunker is None:
-            chunker = get_chunker_for_file(file_path)
+            chunker = get_chunker_for_file(
+                file_path, chunk_size=chunk_size, overlap=overlap
+            )
+            logger.debug(
+                f"Auto-selected {type(chunker).__name__} for {file_path.name}"
+            )
 
         # Check if this is a code document with symbols
         if doc.metadata.get("is_code") and "symbols" in doc.metadata:
@@ -579,7 +601,11 @@ class QdrantIndexer:
         return chunks_with_symbols
 
     def _load_and_chunk_file(
-        self, file_path: Path, chunker: Chunker | None
+        self,
+        file_path: Path,
+        chunker: Chunker | None,
+        chunk_size: int = 1536,
+        overlap: int = 200,
     ) -> LoadedFile:
         """Load a file and prepare chunks for embedding.
 
@@ -588,6 +614,8 @@ class QdrantIndexer:
         Args:
             file_path: Path to the file to load.
             chunker: Chunker instance for splitting content, or None for auto-selection.
+            chunk_size: Chunk size for auto-selected chunker (used when chunker is None).
+            overlap: Overlap for auto-selected chunker (used when chunker is None).
 
         Returns:
             LoadedFile with prepared chunks or error.
@@ -598,7 +626,12 @@ class QdrantIndexer:
 
             # Auto-select chunker based on file type if None
             if chunker is None:
-                chunker = get_chunker_for_file(file_path)
+                chunker = get_chunker_for_file(
+                    file_path, chunk_size=chunk_size, overlap=overlap
+                )
+                logger.debug(
+                    f"Auto-selected {type(chunker).__name__} for {file_path.name}"
+                )
 
             prepared_chunks: list[PreparedChunk] = []
 
@@ -734,17 +767,31 @@ class QdrantIndexer:
         files_loaded = 0
 
         # Get chunker settings for PDF process pool
-        # When chunker is None (auto mode), use defaults
+        # When chunker is None (auto mode), use defaults and "auto" strategy
         if chunker is not None:
             chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 1536
             overlap = chunker.overlap if hasattr(chunker, "overlap") else 200
+            # Determine strategy from chunker class name
+            chunker_strategy = type(chunker).__name__.replace("Chunker", "").lower()
+            if chunker_strategy not in (
+                "recursive",
+                "fixed",
+                "markdown",
+                "html",
+                "semantic",
+                "code",
+            ):
+                chunker_strategy = "recursive"  # fallback
         else:
             chunk_size = 1536
             overlap = 200
+            chunker_strategy = "auto"
 
         # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
         if pdf_files:
-            pdf_args = [(str(f), chunk_size, overlap) for f in pdf_files]
+            pdf_args = [
+                (str(f), chunk_size, overlap, chunker_strategy) for f in pdf_files
+            ]
 
             with ProcessPoolExecutor(max_workers=workers) as executor:
                 for result in executor.map(_load_pdf_file, pdf_args):
@@ -761,6 +808,12 @@ class QdrantIndexer:
                                 f"Failed: {file_path.name}",
                             )
                     else:
+                        # Log chunker used for PDF
+                        if result.get("chunker_used"):
+                            logger.debug(
+                                f"Used {result['chunker_used']} for {file_path.name}"
+                            )
+
                         # Convert dict chunks back to PreparedChunk objects
                         chunks = [
                             PreparedChunk(
@@ -789,7 +842,9 @@ class QdrantIndexer:
             with ThreadPoolExecutor(max_workers=workers) as executor:
                 # Submit all file loading tasks
                 future_to_file = {
-                    executor.submit(self._load_and_chunk_file, f, chunker): f
+                    executor.submit(
+                        self._load_and_chunk_file, f, chunker, chunk_size, overlap
+                    ): f
                     for f in other_files
                 }
 
@@ -960,6 +1015,8 @@ class QdrantIndexer:
         state_file: Path | None = None,
         force: bool = False,
         on_progress: ProgressCallback | None = None,
+        chunk_size: int = 1536,
+        overlap: int = 200,
     ) -> SyncResult:
         """Synchronize a directory with the database.
 
@@ -968,12 +1025,14 @@ class QdrantIndexer:
         Args:
             path: Directory path to synchronize.
             patterns: Glob patterns for file matching (defaults to common doc types).
-            chunker: Chunker instance (defaults to RecursiveChunker).
+            chunker: Chunker instance, or None for auto-selection per file.
             batch_size: Number of points to upload per batch.
             exclude_patterns: Additional glob patterns to exclude.
             state_file: Path to state file (defaults to .qdrant-index-state.json in path).
             force: Force re-indexing of all files even if unchanged.
             on_progress: Optional callback for progress updates.
+            chunk_size: Chunk size for auto-selected chunker (used when chunker is None).
+            overlap: Overlap for auto-selected chunker (used when chunker is None).
 
         Returns:
             SyncResult with counts of added, updated, deleted, unchanged, and failed files.
@@ -1084,7 +1143,12 @@ class QdrantIndexer:
 
                 # Index file (don't pass on_progress to index_file to avoid confusing the sync progress)
                 chunk_count, chunk_ids = self.index_file(
-                    file_path, chunker, batch_size, None
+                    file_path,
+                    chunker,
+                    batch_size,
+                    None,
+                    chunk_size=chunk_size,
+                    overlap=overlap,
                 )
 
                 # Update state with mtime

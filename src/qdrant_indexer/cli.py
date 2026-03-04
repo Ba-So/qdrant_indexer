@@ -336,6 +336,8 @@ def index(
                     state_file=state_file,
                     force=False,
                     on_progress=on_sync_progress,
+                    chunk_size=chunk_size,
+                    overlap=chunk_overlap,
                 )
 
                 progress.update(task, description="Complete")
