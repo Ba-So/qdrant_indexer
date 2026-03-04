@@ -20,7 +20,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from qdrant_indexer.chunkers import RecursiveChunker
+from qdrant_indexer.chunkers import CHUNKERS, get_chunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
 from qdrant_indexer.indexer import (
     DEFAULT_EMBEDDING_BATCH_SIZE,
@@ -90,6 +90,13 @@ def index(
     chunk_overlap: Annotated[
         int, typer.Option("--chunk-overlap", help="Overlap between chunks")
     ] = 200,
+    chunker_strategy: Annotated[
+        str,
+        typer.Option(
+            "--chunker",
+            help="Chunking strategy: auto (file-based), recursive, fixed, markdown, html, semantic, code",
+        ),
+    ] = "auto",
     pattern: Annotated[
         list[str],
         typer.Option(
@@ -199,6 +206,15 @@ def index(
         display_error(f"Path is not a directory: {path}")
         raise typer.Exit(1)
 
+    # Validate chunker strategy early (before connecting to Qdrant)
+    if chunker_strategy != "auto" and chunker_strategy not in CHUNKERS:
+        valid_strategies = ", ".join(sorted(CHUNKERS.keys()))
+        display_error(
+            f"Unknown chunker strategy '{chunker_strategy}'. "
+            f"Valid strategies: auto, {valid_strategies}"
+        )
+        raise typer.Exit(1)
+
     start_time = time.time()
 
     try:
@@ -242,7 +258,17 @@ def index(
             else:
                 console.print(f"Using existing collection: [cyan]{collection}[/cyan]")
 
-        chunker = RecursiveChunker(chunk_size=chunk_size, overlap=chunk_overlap)
+        # Initialize chunker based on strategy
+        if chunker_strategy == "auto":
+            # Signal to use per-file chunker selection in indexer
+            chunker = None
+        else:
+            # Strategy already validated above
+            chunker = get_chunker(
+                chunker_strategy,
+                chunk_size=chunk_size,
+                overlap=chunk_overlap,
+            )
 
         # Build exclude patterns list
         exclude_patterns = list(exclude) if exclude else []
@@ -258,6 +284,7 @@ def index(
                     else f"[cyan]incremental[/cyan] (state: {state_file})"
                 )
                 console.print(f"Mode: {mode_msg}")
+                console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
 
             with Progress(
                 SpinnerColumn(),
@@ -316,6 +343,7 @@ def index(
             # Full mode: use index_directory
             if not quiet:
                 console.print(f"Mode: [cyan]full re-index[/cyan]")
+                console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
                 console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
 
             # Progress bar with phases

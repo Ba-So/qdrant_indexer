@@ -21,7 +21,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from qdrant_indexer.chunkers import Chunker, RecursiveChunker
+from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
 from qdrant_indexer.filters import filter_files
 from qdrant_indexer.loaders import get_loader
 from qdrant_indexer.models import CodeSymbol, IndexedFileState, SyncResult
@@ -330,7 +330,7 @@ class QdrantIndexer:
     def index_file(
         self,
         file_path: Path,
-        chunker: Chunker,
+        chunker: Chunker | None,
         batch_size: int = 100,
         on_progress: ProgressCallback | None = None,
     ) -> tuple[int, list[int]]:
@@ -338,7 +338,7 @@ class QdrantIndexer:
 
         Args:
             file_path: Path to the file to index.
-            chunker: Chunker instance to split the document.
+            chunker: Chunker instance to split the document, or None for auto-selection.
             batch_size: Number of points to upload per batch.
             on_progress: Optional callback for progress updates.
 
@@ -348,6 +348,10 @@ class QdrantIndexer:
         logger.debug(f"Loading file: {file_path}")
         loader = get_loader(file_path)
         doc = loader.load(file_path)
+
+        # Auto-select chunker based on file type if None
+        if chunker is None:
+            chunker = get_chunker_for_file(file_path)
 
         # Check if this is a code document with symbols
         if doc.metadata.get("is_code") and "symbols" in doc.metadata:
@@ -574,14 +578,16 @@ class QdrantIndexer:
 
         return chunks_with_symbols
 
-    def _load_and_chunk_file(self, file_path: Path, chunker: Chunker) -> LoadedFile:
+    def _load_and_chunk_file(
+        self, file_path: Path, chunker: Chunker | None
+    ) -> LoadedFile:
         """Load a file and prepare chunks for embedding.
 
         This method is designed to be called in parallel threads.
 
         Args:
             file_path: Path to the file to load.
-            chunker: Chunker instance for splitting content.
+            chunker: Chunker instance for splitting content, or None for auto-selection.
 
         Returns:
             LoadedFile with prepared chunks or error.
@@ -589,6 +595,10 @@ class QdrantIndexer:
         try:
             loader = get_loader(file_path)
             doc = loader.load(file_path)
+
+            # Auto-select chunker based on file type if None
+            if chunker is None:
+                chunker = get_chunker_for_file(file_path)
 
             prepared_chunks: list[PreparedChunk] = []
 
@@ -673,8 +683,8 @@ class QdrantIndexer:
         if patterns is None:
             patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"]
 
-        if chunker is None:
-            chunker = RecursiveChunker()
+        # Note: chunker=None signals auto-selection per file
+        # (handled in _load_and_chunk_file)
 
         # Discover files first
         all_files = []
@@ -724,8 +734,13 @@ class QdrantIndexer:
         files_loaded = 0
 
         # Get chunker settings for PDF process pool
-        chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 1536
-        overlap = chunker.overlap if hasattr(chunker, "overlap") else 200
+        # When chunker is None (auto mode), use defaults
+        if chunker is not None:
+            chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 1536
+            overlap = chunker.overlap if hasattr(chunker, "overlap") else 200
+        else:
+            chunk_size = 1536
+            overlap = 200
 
         # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
         if pdf_files:
@@ -966,8 +981,8 @@ class QdrantIndexer:
         if state_file is None:
             state_file = path / ".qdrant-index-state.json"
 
-        if chunker is None:
-            chunker = RecursiveChunker()
+        # Note: chunker=None signals auto-selection per file
+        # (handled in index_file)
 
         # Load existing state
         state = IndexState(state_file)
