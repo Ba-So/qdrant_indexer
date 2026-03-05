@@ -100,11 +100,13 @@ class TestIndexFile:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker(chunk_size=1000)
-        chunk_count, point_ids = indexer.index_file(sample_markdown_file, chunker)
+        chunk_count, point_ids, image_count, image_ids = indexer.index_file(sample_markdown_file, chunker)
 
         assert chunk_count >= 1
         assert isinstance(point_ids, list)
         assert len(point_ids) == chunk_count
+        assert image_count == 0
+        assert image_ids == []
         mock_client_instance.upsert.assert_called()
 
     @patch("qdrant_indexer.indexer.get_model_info")
@@ -125,12 +127,14 @@ class TestIndexFile:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker(chunk_size=50)  # Small chunks
-        chunk_count, point_ids = indexer.index_file(sample_markdown_file, chunker)
+        chunk_count, point_ids, image_count, image_ids = indexer.index_file(sample_markdown_file, chunker)
 
         assert isinstance(chunk_count, int)
         assert isinstance(point_ids, list)
         assert chunk_count >= 0
         assert len(point_ids) == chunk_count
+        assert image_count == 0
+        assert image_ids == []
 
 
 class TestIndexDirectory:
@@ -353,12 +357,14 @@ class TestCodeFileIndexing:
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker()
 
-        chunk_count, point_ids = indexer.index_file(py_file, chunker)
+        chunk_count, point_ids, image_count, image_ids = indexer.index_file(py_file, chunker)
 
         # Should have indexed at least one symbol
         assert chunk_count >= 1
         assert isinstance(point_ids, list)
         assert len(point_ids) == chunk_count
+        assert image_count == 0  # Python files don't have images
+        assert image_ids == []
         mock_client_instance.upsert.assert_called()
 
         # Check that points were created with code metadata
@@ -393,11 +399,13 @@ class TestCodeFileIndexing:
 
         indexer = QdrantIndexer("http://localhost:6333", "test")
         chunker = RecursiveChunker()
-        chunk_count, point_ids = indexer.index_file(md_file, chunker)
+        chunk_count, point_ids, image_count, image_ids = indexer.index_file(md_file, chunker)
 
         assert chunk_count >= 1
         assert isinstance(point_ids, list)
         assert len(point_ids) == chunk_count
+        assert image_count == 0  # Markdown files don't have images
+        assert image_ids == []
         mock_client_instance.upsert.assert_called()
 
         # Check payload doesn't have code-specific fields

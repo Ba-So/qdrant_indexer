@@ -41,6 +41,15 @@ class IndexingConfig:
 
 
 @dataclass
+class ImageEmbeddingConfig:
+    """Image embedding configuration for CLIP-based image indexing."""
+
+    enabled: bool = False
+    vision_model: str = "Qdrant/clip-ViT-B-32-vision"
+    min_image_size: int = 100
+
+
+@dataclass
 class Config:
     """Main configuration container."""
 
@@ -48,6 +57,7 @@ class Config:
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     chunking: ChunkingConfig = field(default_factory=ChunkingConfig)
     indexing: IndexingConfig = field(default_factory=IndexingConfig)
+    image_embedding: ImageEmbeddingConfig = field(default_factory=ImageEmbeddingConfig)
 
 
 CONFIG_FILENAME = ".qdrant-indexer.toml"
@@ -144,6 +154,18 @@ def _parse_config(data: dict[str, Any]) -> Config:
             ),
         )
 
+    if "image_embedding" in data:
+        img_data = data["image_embedding"]
+        config.image_embedding = ImageEmbeddingConfig(
+            enabled=img_data.get("enabled", config.image_embedding.enabled),
+            vision_model=img_data.get(
+                "vision_model", config.image_embedding.vision_model
+            ),
+            min_image_size=img_data.get(
+                "min_image_size", config.image_embedding.min_image_size
+            ),
+        )
+
     return config
 
 
@@ -186,6 +208,11 @@ def merge_config(config: Config, **overrides: Any) -> Config:
         pattern=config.indexing.pattern,
         exclude_patterns=list(config.indexing.exclude_patterns),
     )
+    image_embedding = ImageEmbeddingConfig(
+        enabled=config.image_embedding.enabled,
+        vision_model=config.image_embedding.vision_model,
+        min_image_size=config.image_embedding.min_image_size,
+    )
 
     # Apply overrides
     if "url" in overrides and overrides["url"] is not None:
@@ -206,9 +233,20 @@ def merge_config(config: Config, **overrides: Any) -> Config:
     if "pattern" in overrides and overrides["pattern"] is not None:
         indexing.pattern = overrides["pattern"]
 
+    # Image embedding overrides
+    if "enable_images" in overrides and overrides["enable_images"] is not None:
+        image_embedding.enabled = overrides["enable_images"]
+
+    if "clip_model" in overrides and overrides["clip_model"] is not None:
+        image_embedding.vision_model = overrides["clip_model"]
+
+    if "min_image_size" in overrides and overrides["min_image_size"] is not None:
+        image_embedding.min_image_size = overrides["min_image_size"]
+
     return Config(
         qdrant=qdrant,
         embedding=embedding,
         chunking=chunking,
         indexing=indexing,
+        image_embedding=image_embedding,
     )

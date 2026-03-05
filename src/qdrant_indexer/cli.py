@@ -23,6 +23,7 @@ from rich.table import Table
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
 from qdrant_indexer.indexer import (
+    DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_WORKERS,
@@ -155,6 +156,27 @@ def index(
             help="Custom state file location (default: .qdrant-index-state.json in directory)",
         ),
     ] = None,
+    images: Annotated[
+        bool,
+        typer.Option(
+            "--images/--no-images",
+            help="Extract and embed images from PDFs using CLIP",
+        ),
+    ] = False,
+    clip_model: Annotated[
+        str,
+        typer.Option(
+            "--clip-model",
+            help="CLIP model for image embeddings",
+        ),
+    ] = DEFAULT_CLIP_VISION_MODEL,
+    min_image_size: Annotated[
+        int,
+        typer.Option(
+            "--min-image-size",
+            help="Minimum image dimension in pixels",
+        ),
+    ] = 100,
     verbose: Annotated[
         int,
         typer.Option(
@@ -195,6 +217,12 @@ def index(
 
         # Custom state file location
         qdrant-indexer index ./docs -c my-docs --state-file ./my-state.json
+
+        # Extract and index images from PDFs with CLIP
+        qdrant-indexer index ./papers -c research --images
+
+        # Use a different CLIP model for images
+        qdrant-indexer index ./papers -c research --images --clip-model Qdrant/resnet50-onnx
     """
     setup_logging(verbose, quiet)
 
@@ -245,6 +273,9 @@ def index(
                 collection_name=collection,
                 embedding_model=embedding_model,
                 use_cuda=gpu,
+                enable_image_embeddings=images,
+                clip_vision_model=clip_model,
+                min_image_size=min_image_size,
             )
 
             progress.update(init_task, description="Connecting to Qdrant...")
@@ -285,6 +316,8 @@ def index(
                 )
                 console.print(f"Mode: {mode_msg}")
                 console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
+                if images:
+                    console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
 
             with Progress(
                 SpinnerColumn(),
@@ -347,6 +380,8 @@ def index(
                 console.print(f"Mode: [cyan]full re-index[/cyan]")
                 console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
                 console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
+                if images:
+                    console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
 
             # Progress bar with phases
             with Progress(
@@ -945,6 +980,59 @@ def list_models(
     console.print(table)
     console.print(f"\n[dim]Total: {len(models)} models[/dim]")
     console.print(f"[dim]Default: {DEFAULT_EMBEDDING_MODEL}[/dim]")
+
+
+@app.command("list-clip-models")
+def list_clip_models(
+    search: Annotated[
+        Optional[str],
+        typer.Argument(help="Filter models by name (e.g., 'clip', 'resnet')"),
+    ] = None,
+) -> None:
+    """List available FastEmbed CLIP/image embedding models.
+
+    Examples:
+        # List all CLIP models
+        qdrant-indexer list-clip-models
+
+        # Find CLIP models
+        qdrant-indexer list-clip-models clip
+
+        # Find ResNet models
+        qdrant-indexer list-clip-models resnet
+    """
+    from fastembed import ImageEmbedding
+
+    models = ImageEmbedding.list_supported_models()
+
+    # Filter if search term provided
+    if search:
+        search_lower = search.lower()
+        models = [m for m in models if search_lower in m["model"].lower()]
+
+    if not models:
+        console.print(f"[yellow]No models found matching '{search}'[/yellow]")
+        return
+
+    table = Table(title="FastEmbed CLIP/Image Models")
+    table.add_column("Model", style="cyan")
+    table.add_column("Dimensions", justify="right")
+    table.add_column("Description", style="dim")
+
+    for model in sorted(models, key=lambda m: m["model"]):
+        desc = model.get("description", "")
+        # Truncate long descriptions
+        if len(desc) > 50:
+            desc = desc[:47] + "..."
+        table.add_row(
+            model["model"],
+            str(model.get("dim", "?")),
+            desc,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(models)} models[/dim]")
+    console.print(f"[dim]Default: {DEFAULT_CLIP_VISION_MODEL}[/dim]")
 
 
 if __name__ == "__main__":

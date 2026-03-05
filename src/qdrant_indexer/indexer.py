@@ -24,13 +24,16 @@ from qdrant_client.models import (
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
 from qdrant_indexer.filters import filter_files
 from qdrant_indexer.loaders import get_loader
-from qdrant_indexer.models import CodeSymbol, IndexedFileState, SyncResult
+from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, SyncResult
 from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
 
 # Default embedding model
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Default CLIP vision model for image embeddings
+DEFAULT_CLIP_VISION_MODEL = "Qdrant/clip-ViT-B-32-vision"
 
 
 def get_model_info(model_name: str) -> dict:
@@ -57,6 +60,32 @@ def get_model_info(model_name: str) -> dict:
     )
 
 
+def get_clip_model_info(model_name: str) -> dict:
+    """Get CLIP image model information from FastEmbed.
+
+    Args:
+        model_name: FastEmbed CLIP model name.
+
+    Returns:
+        Dict with 'dim' (vector dimension) and 'model' (canonical name).
+
+    Raises:
+        ValueError: If model is not supported by FastEmbed.
+    """
+    from fastembed import ImageEmbedding
+
+    supported = ImageEmbedding.list_supported_models()
+    for model in supported:
+        if model["model"] == model_name:
+            return model
+    # List available models in error message
+    available = [m["model"] for m in supported]
+    raise ValueError(
+        f"Unsupported CLIP model: {model_name}\n"
+        f"Available models: {', '.join(available[:10])}..."
+    )
+
+
 def model_to_vector_name(model_name: str) -> str:
     """Convert model name to a valid Qdrant vector name.
 
@@ -73,6 +102,21 @@ def model_to_vector_name(model_name: str) -> str:
     # Extract the model name after the last '/' and prefix with 'fast-'
     name = model_name.split("/")[-1].lower()
     return f"fast-{name}"
+
+
+def clip_model_to_vector_name(model_name: str) -> str:
+    """Convert CLIP model name to a valid Qdrant vector name.
+
+    Uses 'clip-{model_name}' convention for image embeddings.
+
+    Args:
+        model_name: FastEmbed CLIP model name (e.g., 'Qdrant/clip-ViT-B-32-vision').
+
+    Returns:
+        Sanitized vector name (e.g., 'clip-clip-vit-b-32-vision').
+    """
+    name = model_name.split("/")[-1].lower()
+    return f"clip-{name}"
 
 
 # Progress callback type: (event, current, total, message)
@@ -218,6 +262,8 @@ class QdrantIndexer:
         collection: Name of the Qdrant collection to use.
         embeddings: TextEmbedding model for generating vectors.
         use_cuda: Whether GPU acceleration is enabled.
+        enable_image_embeddings: Whether image embedding is enabled.
+        clip_vision_model: CLIP model name for image embeddings.
     """
 
     def __init__(
@@ -226,6 +272,9 @@ class QdrantIndexer:
         collection_name: str,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         use_cuda: bool | None = None,
+        enable_image_embeddings: bool = False,
+        clip_vision_model: str = DEFAULT_CLIP_VISION_MODEL,
+        min_image_size: int = 100,
     ):
         """Initialize the indexer.
 
@@ -235,10 +284,16 @@ class QdrantIndexer:
             embedding_model: FastEmbed model name for embeddings.
             use_cuda: Enable CUDA/GPU acceleration. If None, auto-detect from
                       QDRANT_INDEXER_USE_CUDA environment variable.
+            enable_image_embeddings: Enable CLIP-based image embedding for PDFs.
+            clip_vision_model: FastEmbed CLIP model for image embeddings.
+            min_image_size: Minimum image dimension in pixels for extraction.
         """
         self.client = QdrantClient(url=qdrant_url)
         self.collection = collection_name
         self.embedding_model = embedding_model
+        self.enable_image_embeddings = enable_image_embeddings
+        self.clip_vision_model = clip_vision_model
+        self.min_image_size = min_image_size
 
         # Auto-detect CUDA from environment if not explicitly set
         if use_cuda is None:
@@ -263,10 +318,33 @@ class QdrantIndexer:
             providers=providers,
         )
 
+        # Lazy-init image embeddings (only when needed)
+        self._image_embeddings = None
+        if enable_image_embeddings:
+            clip_info = get_clip_model_info(clip_vision_model)
+            self._clip_vector_size = clip_info["dim"]
+            self._clip_vector_name = clip_model_to_vector_name(clip_vision_model)
+
         logger.debug(
             f"Initialized indexer for collection '{collection_name}' at {qdrant_url} "
             f"with model '{embedding_model}' (dim={self._vector_size}, cuda={self.use_cuda})"
         )
+        if enable_image_embeddings:
+            logger.debug(
+                f"Image embeddings enabled with CLIP model '{clip_vision_model}'"
+            )
+
+    def _get_image_embeddings(self):
+        """Lazy-initialize and return the ImageEmbedding model."""
+        if self._image_embeddings is None:
+            from fastembed import ImageEmbedding
+
+            providers = get_default_providers(self.use_cuda)
+            self._image_embeddings = ImageEmbedding(
+                model_name=self.clip_vision_model,
+                providers=providers,
+            )
+        return self._image_embeddings
 
     def ensure_collection(self) -> bool:
         """Ensure the collection exists, creating it if necessary.
@@ -275,20 +353,62 @@ class QdrantIndexer:
             True if collection was created, False if it already existed.
         """
         if self.client.collection_exists(self.collection):
+            # Check if we need to add CLIP vectors to existing collection
+            if self.enable_image_embeddings:
+                self._ensure_clip_vectors()
             logger.debug(f"Collection '{self.collection}' already exists")
             return False
 
+        # Build vectors config
+        vectors_config = {
+            self._vector_name: VectorParams(
+                size=self._vector_size,
+                distance=Distance.COSINE,
+            ),
+        }
+
+        # Add CLIP vector config if image embeddings are enabled
+        if self.enable_image_embeddings:
+            vectors_config[self._clip_vector_name] = VectorParams(
+                size=self._clip_vector_size,
+                distance=Distance.COSINE,
+            )
+
         self.client.create_collection(
             collection_name=self.collection,
-            vectors_config={
-                self._vector_name: VectorParams(
-                    size=self._vector_size,
-                    distance=Distance.COSINE,
-                ),
-            },
+            vectors_config=vectors_config,
         )
         logger.info(f"Created collection '{self.collection}'")
         return True
+
+    def _ensure_clip_vectors(self) -> None:
+        """Ensure CLIP vectors exist in an existing collection.
+
+        Adds the CLIP vector configuration if it doesn't exist yet.
+        """
+        collection_info = self.client.get_collection(self.collection)
+        vectors_config = collection_info.config.params.vectors
+
+        # Check if CLIP vector already exists
+        if isinstance(vectors_config, dict):
+            if self._clip_vector_name in vectors_config:
+                logger.debug(f"CLIP vector '{self._clip_vector_name}' already exists")
+                return
+
+        # Add CLIP vector to collection
+        try:
+            self.client.update_collection(
+                collection_name=self.collection,
+                vectors_config={
+                    self._clip_vector_name: VectorParams(
+                        size=self._clip_vector_size,
+                        distance=Distance.COSINE,
+                    ),
+                },
+            )
+            logger.info(f"Added CLIP vector '{self._clip_vector_name}' to collection")
+        except Exception as e:
+            logger.warning(f"Could not add CLIP vectors to existing collection: {e}")
 
     def delete_file_chunks(self, file_path: Path) -> int:
         """Delete all chunks for a file from the database.
@@ -348,7 +468,7 @@ class QdrantIndexer:
         on_progress: ProgressCallback | None = None,
         chunk_size: int = 1536,
         overlap: int = 200,
-    ) -> tuple[int, list[int]]:
+    ) -> tuple[int, list[int], int, list[int]]:
         """Index a single file into Qdrant.
 
         Args:
@@ -360,7 +480,7 @@ class QdrantIndexer:
             overlap: Overlap for auto-selected chunker (used when chunker is None).
 
         Returns:
-            Tuple of (chunk_count, list of point IDs).
+            Tuple of (chunk_count, chunk_ids, image_count, image_ids).
         """
         logger.debug(f"Loading file: {file_path}")
         loader = get_loader(file_path)
@@ -375,15 +495,33 @@ class QdrantIndexer:
                 f"Auto-selected {type(chunker).__name__} for {file_path.name}"
             )
 
-        # Check if this is a code document with symbols
+        # Index text content
         if doc.metadata.get("is_code") and "symbols" in doc.metadata:
-            return self._index_code_file(
+            chunk_count, chunk_ids = self._index_code_file(
                 doc, file_path, chunker, batch_size, on_progress
             )
         else:
-            return self._index_regular_file(
+            chunk_count, chunk_ids = self._index_regular_file(
                 doc, file_path, chunker, batch_size, on_progress
             )
+
+        # Extract and index images from PDFs if enabled
+        image_count = 0
+        image_ids: list[int] = []
+        if self.enable_image_embeddings and file_path.suffix.lower() == ".pdf":
+            from qdrant_indexer.loaders import PDFLoader
+
+            pdf_loader = PDFLoader(
+                extract_images=True,
+                min_image_size=self.min_image_size,
+            )
+            images = pdf_loader.extract_images(file_path)
+            if images:
+                image_count, image_ids = self._index_images(
+                    images, file_path, doc.metadata, batch_size
+                )
+
+        return chunk_count, chunk_ids, image_count, image_ids
 
     def _index_regular_file(
         self,
@@ -1138,11 +1276,13 @@ class QdrantIndexer:
             abs_path = str(file_path.absolute())
             try:
                 if status == "modified" and file_state:
-                    # Delete old chunks first
+                    # Delete old chunks and images first
                     self.delete_points_by_ids(file_state.chunk_ids)
+                    if file_state.image_ids:
+                        self.delete_points_by_ids(file_state.image_ids)
 
                 # Index file (don't pass on_progress to index_file to avoid confusing the sync progress)
-                chunk_count, chunk_ids = self.index_file(
+                chunk_count, chunk_ids, image_count, image_ids = self.index_file(
                     file_path,
                     chunker,
                     batch_size,
@@ -1159,6 +1299,8 @@ class QdrantIndexer:
                     chunk_count=chunk_count,
                     chunk_ids=chunk_ids,
                     mtime=current_mtime,
+                    image_count=image_count,
+                    image_ids=image_ids,
                 )
                 state.set_file_state(file_path, new_state)
 
@@ -1185,6 +1327,8 @@ class QdrantIndexer:
             if file_state:
                 try:
                     self.delete_points_by_ids(file_state.chunk_ids)
+                    if file_state.image_ids:
+                        self.delete_points_by_ids(file_state.image_ids)
                     state.remove_file(file_path)
                     deleted += 1
                     logger.info(f"Removed deleted file: {file_path.name}")
@@ -1298,3 +1442,147 @@ class QdrantIndexer:
             if key != "symbols":
                 payload[key] = value
         return payload
+
+    def _generate_image_point_id(self, file_path: Path, image_index: int) -> int:
+        """Generate a stable point ID for an image.
+
+        Uses a different namespace than text chunks to avoid collisions.
+
+        Args:
+            file_path: Path to the source file.
+            image_index: Index of the image within the file.
+
+        Returns:
+            Positive int64 ID.
+        """
+        key = f"image:{file_path.absolute()}-{image_index}"
+        hash_obj = hashlib.sha256(key.encode())
+        return int.from_bytes(hash_obj.digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
+
+    def _build_image_payload(
+        self,
+        image: ExtractedImage,
+        file_path: Path,
+        image_index: int,
+        total_images: int,
+        metadata: dict,
+    ) -> dict:
+        """Build the payload dict for an image point.
+
+        Args:
+            image: ExtractedImage object with image data and context.
+            file_path: Path to the source file.
+            image_index: Index of this image.
+            total_images: Total number of images from the source.
+            metadata: Additional metadata from the document loader.
+
+        Returns:
+            Payload dict with all fields including image-specific metadata.
+        """
+        # Build document text from caption and surrounding text
+        doc_parts = []
+        if image.caption:
+            doc_parts.append(image.caption)
+        if image.surrounding_text:
+            doc_parts.append(image.surrounding_text)
+        document_text = " ".join(doc_parts) if doc_parts else ""
+
+        payload = {
+            "document": document_text,
+            "source": str(file_path.absolute()),
+            "content_type": "image",
+            "image_index": image_index,
+            "total_images": total_images,
+            "page_number": image.page_number,
+            "width": image.width,
+            "height": image.height,
+            "bbox": list(image.bbox),
+            "caption": image.caption or "",
+            "surrounding_text": image.surrounding_text or "",
+            "image_hash": image.image_hash or "",
+            "timestamp": datetime.now().isoformat(),
+        }
+        # Merge document metadata (excluding symbols)
+        for key, value in metadata.items():
+            if key != "symbols":
+                payload[key] = value
+        return payload
+
+    def _index_images(
+        self,
+        images: list[ExtractedImage],
+        file_path: Path,
+        metadata: dict,
+        batch_size: int = 100,
+    ) -> tuple[int, list[int]]:
+        """Index extracted images into Qdrant.
+
+        Args:
+            images: List of ExtractedImage objects.
+            file_path: Path to the source file.
+            metadata: Document metadata.
+            batch_size: Number of points to upload per batch.
+
+        Returns:
+            Tuple of (image_count, list of point IDs).
+        """
+        import io
+
+        from PIL import Image
+
+        if not images:
+            return 0, []
+
+        image_embedder = self._get_image_embeddings()
+        total_images = len(images)
+        point_ids: list[int] = []
+        points_batch: list[PointStruct] = []
+
+        logger.debug(f"Generating CLIP embeddings for {total_images} images")
+
+        # Process images and generate embeddings
+        # FastEmbed ImageEmbedding accepts PIL Images
+        pil_images = []
+        for img in images:
+            pil_img = Image.open(io.BytesIO(img.image_data))
+            pil_images.append(pil_img)
+
+        # Generate embeddings
+        embeddings = list(image_embedder.embed(pil_images))
+
+        for i, (image, vector) in enumerate(zip(images, embeddings)):
+            point_id = self._generate_image_point_id(file_path, i)
+            point_ids.append(point_id)
+
+            payload = self._build_image_payload(
+                image=image,
+                file_path=file_path,
+                image_index=i,
+                total_images=total_images,
+                metadata=metadata,
+            )
+
+            points_batch.append(
+                PointStruct(
+                    id=point_id,
+                    vector={self._clip_vector_name: list(vector)},
+                    payload=payload,
+                )
+            )
+
+            if len(points_batch) >= batch_size:
+                self.client.upsert(
+                    collection_name=self.collection,
+                    points=points_batch,
+                )
+                points_batch = []
+
+        # Upload remaining points
+        if points_batch:
+            self.client.upsert(
+                collection_name=self.collection,
+                points=points_batch,
+            )
+
+        logger.info(f"Indexed {total_images} images from {file_path.name}")
+        return total_images, point_ids

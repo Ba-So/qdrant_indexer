@@ -22,6 +22,31 @@ class Document:
 
 
 @dataclass
+class ExtractedImage:
+    """Represents an image extracted from a PDF document.
+
+    Attributes:
+        image_data: Raw image data as bytes (PNG format).
+        page_number: Page number where the image was found (1-indexed).
+        bbox: Bounding box as (x0, y0, x1, y1) in PDF coordinates.
+        width: Image width in pixels.
+        height: Image height in pixels.
+        surrounding_text: Text content near the image for context.
+        caption: Detected caption (e.g., "Figure 1: ...").
+        image_hash: MD5 hash of image data for deduplication.
+    """
+
+    image_data: bytes
+    page_number: int
+    bbox: tuple[float, float, float, float]
+    width: int
+    height: int
+    surrounding_text: str | None = None
+    caption: str | None = None
+    image_hash: str | None = None
+
+
+@dataclass
 class Chunk:
     """Represents a chunk of text from a document.
 
@@ -108,6 +133,8 @@ class IndexedFileState:
     chunk_count: int
     chunk_ids: list[int]
     mtime: float | None = None
+    image_count: int = 0
+    image_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
