@@ -1,6 +1,8 @@
 """Tests for text chunkers."""
 
+import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -962,6 +964,89 @@ class TestSemanticChunker:
         # (though this isn't strictly guaranteed due to merging)
         assert len(chunks_high) >= 1
         assert len(chunks_low) >= 1
+
+    def test_embedding_failure_fallback(self):
+        """Test graceful fallback to RecursiveChunker when embeddings fail."""
+        text = """
+        First paragraph about programming and software development.
+        Python is a popular programming language.
+
+        Second paragraph about cooking and food preparation.
+        Recipes require careful measurement of ingredients.
+
+        Third paragraph about space exploration and astronomy.
+        NASA launches missions to explore the solar system.
+        """
+
+        chunker = SemanticChunker(chunk_size=500)
+
+        # Mock _compute_embeddings to raise an exception
+        with patch.object(
+            chunker, "_compute_embeddings", side_effect=RuntimeError("Embedding failed")
+        ):
+            # Should not raise, should fall back to RecursiveChunker
+            chunks = chunker.chunk(text.strip())
+
+        # Should still produce chunks via fallback
+        assert len(chunks) > 0
+        # Content should be preserved
+        combined = " ".join(chunks)
+        assert "programming" in combined
+        assert "cooking" in combined
+
+    @pytest.mark.performance
+    def test_performance_benchmark(self):
+        """Benchmark SemanticChunker performance.
+
+        SemanticChunker uses neural network embeddings which are slower than
+        simple string operations. This test verifies:
+        1. Chunking completes in reasonable time (<5 seconds for test text)
+        2. Model caching works (subsequent calls are faster)
+        """
+        # Create a moderately sized text with multiple topics
+        text = """
+        Machine learning is a subset of artificial intelligence. Neural networks
+        process data through layers of interconnected nodes. Deep learning models
+        can recognize patterns in images, text, and audio. Training requires large
+        datasets and significant computational resources.
+
+        Ancient civilizations built remarkable structures. The pyramids of Egypt
+        stand as testaments to human ingenuity. Roman aqueducts transported water
+        across vast distances. Medieval castles protected kingdoms from invaders.
+
+        Music theory encompasses scales, chords, and harmony. Composers arrange
+        notes to create melodies and rhythms. Orchestras combine various instruments
+        to produce symphonic works. Jazz improvisation requires deep understanding
+        of musical structure.
+        """
+
+        semantic = SemanticChunker(chunk_size=400)
+
+        # First call includes model loading
+        start = time.perf_counter()
+        chunks1 = semantic.chunk(text.strip())
+        first_call_time = time.perf_counter() - start
+
+        # Second call should be faster (model cached)
+        start = time.perf_counter()
+        chunks2 = semantic.chunk(text.strip())
+        second_call_time = time.perf_counter() - start
+
+        # Verify chunks are produced
+        assert len(chunks1) > 0
+        assert len(chunks2) > 0
+
+        # First call should complete in <5 seconds (includes model loading)
+        assert first_call_time < 5.0, (
+            f"First call took {first_call_time:.2f}s (expected <5s)"
+        )
+
+        # Second call should be faster due to model caching
+        # (model already loaded, just embedding computation)
+        assert second_call_time < first_call_time or second_call_time < 2.0, (
+            f"Second call ({second_call_time:.2f}s) should be faster than "
+            f"first ({first_call_time:.2f}s) or under 2s"
+        )
 
 
 class TestGetChunker:
