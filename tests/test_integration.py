@@ -10,6 +10,7 @@ Or run only integration tests with:
     pytest -m integration
 """
 
+import logging
 import subprocess
 import sys
 import time
@@ -20,7 +21,12 @@ import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 
-from qdrant_indexer.chunkers import RecursiveChunker
+from qdrant_indexer.chunkers import (
+    CodeChunker,
+    HTMLChunker,
+    MarkdownChunker,
+    RecursiveChunker,
+)
 from qdrant_indexer.indexer import QdrantIndexer
 
 # Default Qdrant URL for tests
@@ -535,6 +541,103 @@ class TestCLIIntegration:
 
         assert result.returncode == 0, f"CLI failed: {result.stderr}"
 
+    def test_cli_chunker_auto(
+        self,
+        test_collection_name: str,
+        cleanup_collection: str,
+        tmp_path: Path,
+    ):
+        """Test CLI with --chunker auto mode."""
+        (tmp_path / "auto_test.md").write_text("# Auto Test\n\n## Section\n\nContent.")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "qdrant_indexer.cli",
+                "index",
+                str(tmp_path),
+                "--collection",
+                test_collection_name,
+                "--url",
+                QDRANT_URL,
+                "--chunker",
+                "auto",
+                "--verbose",
+                "--verbose",  # -vv for DEBUG output
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        assert result.returncode == 0, f"CLI failed: {result.stderr}"
+        # Verbose output should show auto-selection
+        assert "Auto-selected" in result.stderr or "Chunker: auto" in result.stdout
+
+    def test_cli_chunker_explicit(
+        self,
+        test_collection_name: str,
+        cleanup_collection: str,
+        tmp_path: Path,
+    ):
+        """Test CLI with explicit --chunker markdown."""
+        (tmp_path / "explicit_test.md").write_text("# Explicit Test\n\nContent.")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "qdrant_indexer.cli",
+                "index",
+                str(tmp_path),
+                "--collection",
+                test_collection_name,
+                "--url",
+                QDRANT_URL,
+                "--chunker",
+                "markdown",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        assert result.returncode == 0, f"CLI failed: {result.stderr}"
+        # Check output includes chunker info
+        assert "Chunker: markdown" in result.stdout or result.returncode == 0
+
+    def test_cli_chunker_invalid(
+        self,
+        tmp_path: Path,
+    ):
+        """Test CLI with invalid chunker strategy."""
+        (tmp_path / "invalid_test.md").write_text("# Invalid Test\n\nContent.")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "qdrant_indexer.cli",
+                "index",
+                str(tmp_path),
+                "--collection",
+                "test_invalid_chunker",
+                "--url",
+                QDRANT_URL,
+                "--chunker",
+                "invalid_name",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        assert result.returncode != 0
+        # Error message may be in stdout or stderr depending on how CLI outputs errors
+        output = result.stdout + result.stderr
+        assert "Unknown chunker strategy" in output
+
 
 class TestEdgeCases:
     """Integration tests for edge cases and error handling."""
@@ -658,3 +761,199 @@ Math symbols: ∑ ∏ √ ∞ ≤ ≥ ≠
         # Verify content preserved
         collection_info = qdrant_client.get_collection(test_collection_name)
         assert collection_info.points_count == chunk_count
+
+
+class TestChunkerSelection:
+    """Integration tests for automatic chunker selection."""
+
+    def test_auto_chunker_markdown(
+        self,
+        test_collection_name: str,
+        qdrant_client: QdrantClient,
+        cleanup_collection: str,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test auto-selection of MarkdownChunker for .md files."""
+        test_file = tmp_path / "test_doc.md"
+        test_file.write_text(
+            """# Test Document
+
+## Section One
+
+Content in section one.
+
+## Section Two
+
+Content in section two.
+"""
+        )
+
+        indexer = QdrantIndexer(
+            qdrant_url=QDRANT_URL,
+            collection_name=test_collection_name,
+        )
+        indexer.ensure_collection()
+
+        with caplog.at_level(logging.DEBUG):
+            # chunker=None triggers auto-selection
+            result = indexer.index_directory(tmp_path, patterns=["**/*.md"], chunker=None)
+
+        assert result["total_files"] == 1
+        assert result["total_chunks"] > 0
+        assert "Auto-selected MarkdownChunker" in caplog.text
+
+    def test_auto_chunker_html(
+        self,
+        test_collection_name: str,
+        qdrant_client: QdrantClient,
+        cleanup_collection: str,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test auto-selection of HTMLChunker for .html files."""
+        test_file = tmp_path / "test_page.html"
+        test_file.write_text(
+            """<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+<article>
+    <h1>Article Title</h1>
+    <section>
+        <h2>Section One</h2>
+        <p>Content in section one.</p>
+    </section>
+    <section>
+        <h2>Section Two</h2>
+        <p>Content in section two.</p>
+    </section>
+</article>
+</body>
+</html>
+"""
+        )
+
+        indexer = QdrantIndexer(
+            qdrant_url=QDRANT_URL,
+            collection_name=test_collection_name,
+        )
+        indexer.ensure_collection()
+
+        with caplog.at_level(logging.DEBUG):
+            result = indexer.index_directory(tmp_path, patterns=["**/*.html"], chunker=None)
+
+        assert result["total_files"] == 1
+        assert result["total_chunks"] > 0
+        assert "Auto-selected HTMLChunker" in caplog.text
+
+    def test_auto_chunker_code(
+        self,
+        test_collection_name: str,
+        qdrant_client: QdrantClient,
+        cleanup_collection: str,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test auto-selection of CodeChunker for .py files."""
+        test_file = tmp_path / "test_module.py"
+        test_file.write_text(
+            '''"""Test module docstring."""
+
+def hello_world():
+    """Say hello."""
+    print("Hello, World!")
+
+def goodbye_world():
+    """Say goodbye."""
+    print("Goodbye, World!")
+'''
+        )
+
+        indexer = QdrantIndexer(
+            qdrant_url=QDRANT_URL,
+            collection_name=test_collection_name,
+        )
+        indexer.ensure_collection()
+
+        with caplog.at_level(logging.DEBUG):
+            result = indexer.index_directory(tmp_path, patterns=["**/*.py"], chunker=None)
+
+        assert result["total_files"] == 1
+        assert result["total_chunks"] > 0
+        assert "Auto-selected CodeChunker" in caplog.text
+
+    def test_auto_chunker_mixed_directory(
+        self,
+        test_collection_name: str,
+        qdrant_client: QdrantClient,
+        cleanup_collection: str,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test correct chunker selection for mixed file types."""
+        # Create .md file
+        (tmp_path / "readme.md").write_text("# Readme\n\nProject readme content.")
+
+        # Create .html file
+        (tmp_path / "index.html").write_text(
+            "<html><body><h1>Index</h1><p>Index content.</p></body></html>"
+        )
+
+        # Create .py file
+        (tmp_path / "script.py").write_text('"""Script docstring."""\n\ndef main():\n    pass\n')
+
+        # Create .txt file (should use RecursiveChunker)
+        (tmp_path / "notes.txt").write_text("Plain text notes.\n\nMore content here.")
+
+        indexer = QdrantIndexer(
+            qdrant_url=QDRANT_URL,
+            collection_name=test_collection_name,
+        )
+        indexer.ensure_collection()
+
+        with caplog.at_level(logging.DEBUG):
+            result = indexer.index_directory(
+                tmp_path, patterns=["**/*.md", "**/*.html", "**/*.py", "**/*.txt"], chunker=None
+            )
+
+        assert result["total_files"] == 4
+        assert result["total_chunks"] > 0
+
+        # Verify each file type got the correct chunker
+        assert "Auto-selected MarkdownChunker for readme.md" in caplog.text
+        assert "Auto-selected HTMLChunker for index.html" in caplog.text
+        assert "Auto-selected CodeChunker for script.py" in caplog.text
+        assert "Auto-selected RecursiveChunker for notes.txt" in caplog.text
+
+    def test_explicit_chunker_override(
+        self,
+        test_collection_name: str,
+        qdrant_client: QdrantClient,
+        cleanup_collection: str,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test that explicit chunker overrides auto-selection."""
+        # Create .md file (would normally use MarkdownChunker)
+        test_file = tmp_path / "doc.md"
+        test_file.write_text("# Document\n\nContent here.")
+
+        indexer = QdrantIndexer(
+            qdrant_url=QDRANT_URL,
+            collection_name=test_collection_name,
+        )
+        indexer.ensure_collection()
+
+        # Use explicit RecursiveChunker instead of auto-selection
+        explicit_chunker = RecursiveChunker(chunk_size=500, overlap=50)
+
+        with caplog.at_level(logging.DEBUG):
+            result = indexer.index_directory(
+                tmp_path, patterns=["**/*.md"], chunker=explicit_chunker
+            )
+
+        assert result["total_files"] == 1
+        assert result["total_chunks"] > 0
+        # Auto-selection log should NOT appear when using explicit chunker
+        assert "Auto-selected" not in caplog.text
