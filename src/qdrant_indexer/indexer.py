@@ -427,7 +427,7 @@ class QdrantIndexer:
         result = self.client.scroll(
             collection_name=self.collection,
             scroll_filter=Filter(
-                must=[FieldCondition(key="source", match=MatchValue(value=source))]
+                must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
             ),
             limit=10000,  # Reasonable limit
             with_payload=False,
@@ -1386,16 +1386,20 @@ class QdrantIndexer:
         Returns:
             Payload dict with all fields.
         """
-        payload = {
-            "document": chunk,  # Field name required by qdrant-mcp
+        # Build nested metadata object (required by mcp-server-qdrant)
+        nested_metadata = {
             "source": str(file_path.absolute()),
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
             "timestamp": datetime.now().isoformat(),
         }
-        # Merge document metadata
-        payload.update(metadata)
-        return payload
+        # Merge document metadata into nested metadata
+        nested_metadata.update(metadata)
+
+        return {
+            "document": chunk,  # Field name required by qdrant-mcp
+            "metadata": nested_metadata,
+        }
 
     def _build_code_payload(
         self,
@@ -1419,8 +1423,8 @@ class QdrantIndexer:
         Returns:
             Payload dict with all fields including code-specific metadata.
         """
-        payload = {
-            "document": chunk,  # Field name required by qdrant-mcp
+        # Build nested metadata object (required by mcp-server-qdrant)
+        nested_metadata = {
             "source": str(file_path.absolute()),
             "chunk_index": chunk_index,
             "total_chunks": total_chunks,
@@ -1440,8 +1444,12 @@ class QdrantIndexer:
         # Merge document metadata (excluding symbols to avoid large payload)
         for key, value in metadata.items():
             if key != "symbols":
-                payload[key] = value
-        return payload
+                nested_metadata[key] = value
+
+        return {
+            "document": chunk,  # Field name required by qdrant-mcp
+            "metadata": nested_metadata,
+        }
 
     def _generate_image_point_id(self, file_path: Path, image_index: int) -> int:
         """Generate a stable point ID for an image.
@@ -1487,8 +1495,8 @@ class QdrantIndexer:
             doc_parts.append(image.surrounding_text)
         document_text = " ".join(doc_parts) if doc_parts else ""
 
-        payload = {
-            "document": document_text,
+        # Build nested metadata object (required by mcp-server-qdrant)
+        nested_metadata = {
             "source": str(file_path.absolute()),
             "content_type": "image",
             "image_index": image_index,
@@ -1505,8 +1513,12 @@ class QdrantIndexer:
         # Merge document metadata (excluding symbols)
         for key, value in metadata.items():
             if key != "symbols":
-                payload[key] = value
-        return payload
+                nested_metadata[key] = value
+
+        return {
+            "document": document_text,
+            "metadata": nested_metadata,
+        }
 
     def _index_images(
         self,

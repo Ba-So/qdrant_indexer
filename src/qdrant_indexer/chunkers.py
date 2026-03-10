@@ -1212,6 +1212,7 @@ def get_chunker(strategy: str, **kwargs) -> Chunker:
         strategy: Chunker strategy name. One of: 'recursive', 'fixed',
                   'markdown', 'html', 'semantic', 'code'.
         **kwargs: Arguments to pass to the chunker constructor.
+                  Unsupported kwargs are silently filtered out.
 
     Returns:
         Configured chunker instance.
@@ -1219,6 +1220,8 @@ def get_chunker(strategy: str, **kwargs) -> Chunker:
     Raises:
         ValueError: If strategy is unknown or 'auto' (which requires file_path).
     """
+    import inspect
+
     if strategy == "auto":
         raise ValueError(
             "Strategy 'auto' requires a file path. Use get_chunker_for_file() instead."
@@ -1228,7 +1231,14 @@ def get_chunker(strategy: str, **kwargs) -> Chunker:
         valid = ", ".join(sorted(CHUNKERS.keys()))
         raise ValueError(f"Unknown chunker strategy '{strategy}'. Valid: {valid}")
 
-    return CHUNKERS[strategy](**kwargs)
+    chunker_cls = CHUNKERS[strategy]
+
+    # Filter kwargs to only those accepted by the chunker's __init__
+    sig = inspect.signature(chunker_cls.__init__)
+    valid_params = set(sig.parameters.keys()) - {"self"}
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_params}
+
+    return chunker_cls(**filtered_kwargs)
 
 
 def get_chunker_for_file(file_path: Path, **kwargs) -> Chunker:

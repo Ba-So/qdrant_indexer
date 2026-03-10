@@ -306,10 +306,11 @@ class TestHelperMethods:
         )
 
         assert "document" in payload
-        assert "source" in payload
-        assert "chunk_index" in payload
-        assert "total_chunks" in payload
-        assert "timestamp" in payload
+        assert "metadata" in payload
+        assert "source" in payload["metadata"]
+        assert "chunk_index" in payload["metadata"]
+        assert "total_chunks" in payload["metadata"]
+        assert "timestamp" in payload["metadata"]
 
     @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
@@ -328,8 +329,8 @@ class TestHelperMethods:
             metadata={"title": "Test Title", "author": "Test Author"},
         )
 
-        assert payload["title"] == "Test Title"
-        assert payload["author"] == "Test Author"
+        assert payload["metadata"]["title"] == "Test Title"
+        assert payload["metadata"]["author"] == "Test Author"
 
 
 class TestCodeFileIndexing:
@@ -372,12 +373,13 @@ class TestCodeFileIndexing:
         points = call_args.kwargs["points"]
         assert len(points) > 0
 
-        # Verify payload contains code-specific fields
+        # Verify payload contains code-specific fields in nested metadata
         payload = points[0].payload
-        assert "language" in payload
-        assert "symbol_type" in payload
-        assert "symbol_name" in payload
-        assert payload["language"] == "python"
+        assert "metadata" in payload
+        assert "language" in payload["metadata"]
+        assert "symbol_type" in payload["metadata"]
+        assert "symbol_name" in payload["metadata"]
+        assert payload["metadata"]["language"] == "python"
 
     @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
@@ -452,18 +454,19 @@ class TestCodeFileIndexing:
             metadata={"filename": "test.py", "is_code": True},
         )
 
-        # Verify all code-specific fields
-        assert payload["language"] == "python"
-        assert payload["symbol_type"] == "function"
-        assert payload["symbol_name"] == "test_func"
-        assert payload["symbol_qualified_name"] == "test_func"
-        assert payload["signature"] == "()"
-        assert payload["docstring"] == "Test function"
-        assert payload["line_start"] == 1
-        assert payload["line_end"] == 1
-        assert payload["parent_class"] == ""
-        assert payload["visibility"] == ""
-        assert payload["filename"] == "test.py"
+        # Verify all code-specific fields in nested metadata
+        meta = payload["metadata"]
+        assert meta["language"] == "python"
+        assert meta["symbol_type"] == "function"
+        assert meta["symbol_name"] == "test_func"
+        assert meta["symbol_qualified_name"] == "test_func"
+        assert meta["signature"] == "()"
+        assert meta["docstring"] == "Test function"
+        assert meta["line_start"] == 1
+        assert meta["line_end"] == 1
+        assert meta["parent_class"] == ""
+        assert meta["visibility"] == ""
+        assert meta["filename"] == "test.py"
 
     @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
@@ -508,11 +511,11 @@ class TestCodeFileIndexing:
             metadata=metadata,
         )
 
-        # Verify symbols list is not in payload
-        assert "symbols" not in payload
+        # Verify symbols list is not in nested metadata
+        assert "symbols" not in payload["metadata"]
         # But other metadata should be included
-        assert payload["filename"] == "test.py"
-        assert payload["is_code"] is True
+        assert payload["metadata"]["filename"] == "test.py"
+        assert payload["metadata"]["is_code"] is True
 
     @patch("qdrant_indexer.indexer.get_model_info")
     @patch("qdrant_indexer.indexer.QdrantClient")
