@@ -1,5 +1,6 @@
 """Document loaders for different file formats."""
 
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
@@ -11,6 +12,8 @@ import pymupdf.layout  # must be imported before pymupdf4llm to enable layout an
 import pymupdf4llm
 
 from qdrant_indexer.models import Document, ExtractedImage
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentLoader(ABC):
@@ -102,16 +105,29 @@ class PDFLoader(DocumentLoader):
         self.extract_images_enabled = extract_images
         self.min_image_size = min_image_size
 
+    # Threshold for replacement character ratio above which text is considered garbled
+    GARBLED_THRESHOLD = 0.3
+
     def load(self, path: Path) -> Document:
         """Load a PDF file, extracting text with proper table formatting.
 
         Uses pymupdf4llm to convert PDF content to Markdown format,
         which preserves table structure and document hierarchy.
+        Falls back to raw text extraction if pymupdf4llm produces garbled
+        output (common with older PDFs using non-standard font encodings).
 
         Extracts available PDF metadata (title, author, subject, keywords,
         creation date, etc.) when present.
         """
         md_text = pymupdf4llm.to_markdown(str(path))
+
+        if self._is_garbled(md_text):
+            logger.warning(
+                "PDF text extraction produced garbled output, "
+                "falling back to raw text extraction: %s",
+                path.name,
+            )
+            md_text = self._extract_raw_text(path)
 
         doc = fitz.open(path)
         page_count = len(doc)
@@ -227,6 +243,44 @@ class PDFLoader(DocumentLoader):
                 return doi
 
         return None
+
+    def _is_garbled(self, text: str) -> bool:
+        """Check if extracted text is garbled (high ratio of replacement characters).
+
+        Old PDFs with non-standard font encodings (e.g., AdvTimes) can cause
+        pymupdf4llm to produce U+FFFD replacement characters instead of text.
+
+        Args:
+            text: Extracted text to check.
+
+        Returns:
+            True if the text appears garbled and should use fallback extraction.
+        """
+        if not text or len(text.strip()) == 0:
+            return False
+        replacement_count = text.count("\ufffd")
+        return replacement_count / len(text) > self.GARBLED_THRESHOLD
+
+    def _extract_raw_text(self, path: Path) -> str:
+        """Extract text from PDF using raw PyMuPDF text extraction.
+
+        This is a fallback for when pymupdf4llm produces garbled output.
+        Uses fitz.Page.get_text() which handles old font encodings better.
+
+        Args:
+            path: Path to the PDF file.
+
+        Returns:
+            Concatenated text from all pages.
+        """
+        doc = fitz.open(path)
+        pages = []
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                pages.append(text)
+        doc.close()
+        return "\n\n".join(pages)
 
     def extract_images(self, path: Path) -> list[ExtractedImage]:
         """Extract images from a PDF file.

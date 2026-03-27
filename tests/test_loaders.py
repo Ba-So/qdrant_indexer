@@ -265,6 +265,44 @@ class TestPDFLoaderHelpers:
         assert result is None
 
 
+class TestPDFLoaderGarbledDetection:
+    """Tests for PDFLoader garbled text detection and fallback."""
+
+    def test_is_garbled_with_clean_text(self):
+        """Clean text should not be detected as garbled."""
+        loader = PDFLoader()
+        assert loader._is_garbled("This is perfectly normal text.") is False
+
+    def test_is_garbled_with_replacement_chars(self):
+        """Text with high replacement char ratio should be detected as garbled."""
+        loader = PDFLoader()
+        garbled = "\ufffd" * 100 + "ok"
+        assert loader._is_garbled(garbled) is True
+
+    def test_is_garbled_with_few_replacement_chars(self):
+        """Text with few replacement chars should not be detected as garbled."""
+        loader = PDFLoader()
+        mostly_ok = "a" * 100 + "\ufffd" * 5
+        assert loader._is_garbled(mostly_ok) is False
+
+    def test_is_garbled_empty_text(self):
+        """Empty text should not be detected as garbled."""
+        loader = PDFLoader()
+        assert loader._is_garbled("") is False
+        assert loader._is_garbled("   ") is False
+
+    def test_is_garbled_threshold_boundary(self):
+        """Test behavior at the threshold boundary."""
+        loader = PDFLoader()
+        # Exactly at 30%: 30 replacement chars + 70 normal = 30% ratio
+        text = "\ufffd" * 30 + "a" * 70
+        # 30/100 = 0.3, not > 0.3, so should be False
+        assert loader._is_garbled(text) is False
+        # Just over 30%
+        text = "\ufffd" * 31 + "a" * 69
+        assert loader._is_garbled(text) is True
+
+
 class TestLoadersRegistry:
     """Tests for LOADERS registry."""
 
