@@ -940,16 +940,7 @@ class QdrantIndexer:
         if chunker is not None:
             pdf_chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else chunk_size
             pdf_overlap = chunker.overlap if hasattr(chunker, "overlap") else overlap
-            chunker_strategy = type(chunker).__name__.replace("Chunker", "").lower()
-            if chunker_strategy not in (
-                "recursive",
-                "fixed",
-                "markdown",
-                "html",
-                "semantic",
-                "code",
-            ):
-                chunker_strategy = "recursive"
+            chunker_strategy = chunker.strategy
         else:
             pdf_chunk_size = chunk_size
             pdf_overlap = overlap
