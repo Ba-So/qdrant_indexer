@@ -24,7 +24,7 @@ from qdrant_client.models import (
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
 from qdrant_indexer.filters import _glob_and_dedup, filter_files
 from qdrant_indexer.loaders import get_loader
-from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, IndexResult, SyncResult
+from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,7 @@ def clip_model_to_vector_name(model_name: str) -> str:
 
 
 # Progress callback type: (event, current, total, message)
-ProgressCallback = Callable[[str, int, int, str], None]
+ProgressCallback = Callable[[ProgressEvent, int, int, str], None]
 
 
 def _load_pdf_file(args: tuple) -> dict:
@@ -579,7 +579,7 @@ class QdrantIndexer:
         point_ids: list[int] = []
 
         if on_progress:
-            on_progress("embedding", 0, total_chunks, f"Embedding {file_path.name}")
+            on_progress(ProgressEvent.EMBEDDING, 0, total_chunks, f"Embedding {file_path.name}")
 
         # Generate embeddings for all chunks at once (more efficient)
         logger.debug(f"Generating embeddings for {total_chunks} chunks")
@@ -606,7 +606,7 @@ class QdrantIndexer:
 
         def _progress(uploaded: int, total: int) -> None:
             if on_progress:
-                on_progress("upload", uploaded, total, f"Uploaded {uploaded}/{total}")
+                on_progress(ProgressEvent.UPLOAD, uploaded, total, f"Uploaded {uploaded}/{total}")
 
         self._upsert_batched(self.collection, all_points, batch_size, _progress)
 
@@ -660,7 +660,7 @@ class QdrantIndexer:
         point_ids: list[int] = []
 
         if on_progress:
-            on_progress("embedding", 0, total_chunks, f"Embedding {file_path.name}")
+            on_progress(ProgressEvent.EMBEDDING, 0, total_chunks, f"Embedding {file_path.name}")
 
         # Generate embeddings for all chunks
         logger.debug(f"Generating embeddings for {total_chunks} code chunks")
@@ -691,7 +691,7 @@ class QdrantIndexer:
 
         def _progress(uploaded: int, total: int) -> None:
             if on_progress:
-                on_progress("upload", uploaded, total, f"Uploaded {uploaded}/{total}")
+                on_progress(ProgressEvent.UPLOAD, uploaded, total, f"Uploaded {uploaded}/{total}")
 
         self._upsert_batched(self.collection, all_points, batch_size, _progress)
 
@@ -868,7 +868,7 @@ class QdrantIndexer:
             logger.info(f"  {len(other_files)} other files (thread pool)")
 
         if on_progress:
-            on_progress("loading", 0, total_files, "Loading files...")
+            on_progress(ProgressEvent.LOADING, 0, total_files, "Loading files...")
 
         # Derive chunker parameters for the PDF process pool (must be serialisable)
         if chunker is not None:
@@ -909,7 +909,7 @@ class QdrantIndexer:
                         failed_files.append(f"{file_path}: {result['error']}")
                         if on_progress:
                             on_progress(
-                                "file_error",
+                                ProgressEvent.FILE_ERROR,
                                 files_loaded,
                                 total_files,
                                 f"Failed: {file_path.name}",
@@ -933,7 +933,7 @@ class QdrantIndexer:
                         loaded_files.append(LoadedFile(file_path=file_path, chunks=chunks))
                         if on_progress:
                             on_progress(
-                                "file_loaded",
+                                ProgressEvent.FILE_LOADED,
                                 files_loaded,
                                 total_files,
                                 file_path.name,
@@ -958,7 +958,7 @@ class QdrantIndexer:
                             failed_files.append(f"{result.file_path}: {result.error}")
                             if on_progress:
                                 on_progress(
-                                    "file_error",
+                                    ProgressEvent.FILE_ERROR,
                                     files_loaded,
                                     total_files,
                                     f"Failed: {file_path.name}",
@@ -967,7 +967,7 @@ class QdrantIndexer:
                             loaded_files.append(result)
                             if on_progress:
                                 on_progress(
-                                    "file_loaded",
+                                    ProgressEvent.FILE_LOADED,
                                     files_loaded,
                                     total_files,
                                     file_path.name,
@@ -1004,7 +1004,7 @@ class QdrantIndexer:
 
         if on_progress:
             on_progress(
-                "embedding", 0, total_chunks, f"Embedding {total_chunks} chunks..."
+                ProgressEvent.EMBEDDING, 0, total_chunks, f"Embedding {total_chunks} chunks..."
             )
 
         chunk_texts = [c.text for c in all_chunks]
@@ -1017,14 +1017,14 @@ class QdrantIndexer:
             if on_progress:
                 completed = min(i + embedding_batch_size, total_chunks)
                 on_progress(
-                    "embedding",
+                    ProgressEvent.EMBEDDING,
                     completed,
                     total_chunks,
                     f"Embedding {completed}/{total_chunks} chunks...",
                 )
 
         if on_progress:
-            on_progress("embedding", total_chunks, total_chunks, "Embeddings complete")
+            on_progress(ProgressEvent.EMBEDDING, total_chunks, total_chunks, "Embeddings complete")
 
         return embeddings
 
@@ -1050,7 +1050,7 @@ class QdrantIndexer:
         logger.info("Preparing points for upload...")
 
         if on_progress:
-            on_progress("preparing", 0, total_chunks, "Preparing points...")
+            on_progress(ProgressEvent.PREPARING, 0, total_chunks, "Preparing points...")
 
         all_points: list[PointStruct] = []
         for i, (chunk, vector) in enumerate(zip(all_chunks, embeddings)):
@@ -1084,23 +1084,23 @@ class QdrantIndexer:
 
             if on_progress and (i + 1) % 100 == 0:
                 on_progress(
-                    "preparing",
+                    ProgressEvent.PREPARING,
                     i + 1,
                     total_chunks,
                     f"Preparing {i + 1}/{total_chunks} points...",
                 )
 
         if on_progress:
-            on_progress("preparing", total_chunks, total_chunks, "Points prepared")
+            on_progress(ProgressEvent.PREPARING, total_chunks, total_chunks, "Points prepared")
 
         logger.info(f"Uploading to Qdrant in batches of {batch_size}...")
         if on_progress:
-            on_progress("uploading", 0, total_chunks, "Uploading to Qdrant...")
+            on_progress(ProgressEvent.UPLOADING, 0, total_chunks, "Uploading to Qdrant...")
 
         def _progress(uploaded: int, total: int) -> None:
             if on_progress:
                 on_progress(
-                    "uploading",
+                    ProgressEvent.UPLOADING,
                     uploaded,
                     total,
                     f"Uploaded {uploaded}/{total}",
@@ -1111,7 +1111,7 @@ class QdrantIndexer:
         )
 
         if on_progress:
-            on_progress("uploading", total_chunks, total_chunks, "Upload complete")
+            on_progress(ProgressEvent.UPLOADING, total_chunks, total_chunks, "Upload complete")
 
         return uploaded_count
 
@@ -1166,7 +1166,7 @@ class QdrantIndexer:
 
         if on_progress:
             on_progress(
-                "discovery",
+                ProgressEvent.DISCOVERY,
                 total_files_to_process,
                 total_files_to_process,
                 f"Found {total_files_to_process} files",
@@ -1263,7 +1263,7 @@ class QdrantIndexer:
 
         # Report discovery complete
         if on_progress:
-            on_progress("sync_discovery", 0, len(files), f"Found {len(files)} files")
+            on_progress(ProgressEvent.SYNC_DISCOVERY, 0, len(files), f"Found {len(files)} files")
 
         # Detect changes
         current_paths = {str(f.absolute()) for f in files}
@@ -1279,7 +1279,7 @@ class QdrantIndexer:
         # Phase 1: Check which files need processing
         for i, file_path in enumerate(files):
             if on_progress:
-                on_progress("sync_checking", i + 1, len(files), file_path.name)
+                on_progress(ProgressEvent.SYNC_CHECKING, i + 1, len(files), file_path.name)
             abs_path = str(file_path.absolute())
             current_mtime = get_file_mtime(file_path)
             file_state = state.get_file_state(file_path)
@@ -1324,7 +1324,7 @@ class QdrantIndexer:
         ) in enumerate(files_to_process):
             if on_progress:
                 on_progress(
-                    "sync_indexing", i + 1, len(files_to_process), file_path.name
+                    ProgressEvent.SYNC_INDEXING, i + 1, len(files_to_process), file_path.name
                 )
 
             abs_path = str(file_path.absolute())
@@ -1376,7 +1376,7 @@ class QdrantIndexer:
             file_state = state.get_file_state(file_path)
 
             if on_progress and deleted_paths:
-                on_progress("sync_deleting", i + 1, len(deleted_paths), file_path.name)
+                on_progress(ProgressEvent.SYNC_DELETING, i + 1, len(deleted_paths), file_path.name)
 
             if file_state:
                 try:

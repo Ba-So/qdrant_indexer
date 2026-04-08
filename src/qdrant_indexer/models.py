@@ -2,8 +2,34 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+
+class ProgressEvent(StrEnum):
+    """Progress event names emitted by the indexer via the on_progress callback.
+
+    All events follow the signature: (event, current, total, message).
+    """
+
+    # Full-index events (index_directory)
+    DISCOVERY = "discovery"
+    LOADING = "loading"
+    FILE_LOADED = "file_loaded"
+    FILE_ERROR = "file_error"
+    EMBEDDING = "embedding"
+    PREPARING = "preparing"
+    UPLOADING = "uploading"
+
+    # Per-file upload events (internal to _index_regular_file / _index_code_file)
+    UPLOAD = "upload"
+
+    # Incremental-sync events (sync_directory)
+    SYNC_DISCOVERY = "sync_discovery"
+    SYNC_CHECKING = "sync_checking"
+    SYNC_INDEXING = "sync_indexing"
+    SYNC_DELETING = "sync_deleting"
 
 
 @dataclass

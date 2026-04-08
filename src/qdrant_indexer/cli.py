@@ -22,7 +22,7 @@ from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, discover_files
-from qdrant_indexer.models import IndexResult, SyncResult
+from qdrant_indexer.models import IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.indexer import (
     DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
@@ -37,53 +37,51 @@ app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collect
 console = Console()
 
 
-def _make_sync_progress_callback(progress, task):
-    """Create a progress callback for sync_directory."""
+def _make_progress_callback(progress, task):
+    """Create a unified progress callback for both index_directory and sync_directory.
 
-    def on_sync_progress(event: str, current: int, total: int, message: str) -> None:
-        if event == "sync_discovery":
+    Handles all ProgressEvent values emitted by the indexer, covering both the
+    full re-index path (discovery, loading, embedding, preparing, uploading) and
+    the incremental sync path (sync_discovery, sync_checking, sync_indexing,
+    sync_deleting).
+    """
+
+    def on_progress(event: ProgressEvent, current: int, total: int, message: str) -> None:
+        # --- full re-index events ---
+        if event == ProgressEvent.DISCOVERY:
             progress.update(task, description=f"Found {total} files", total=total, completed=0)
-        elif event == "sync_checking":
-            progress.update(task, description=f"Checking: {message}", completed=current)
-        elif event == "sync_indexing":
-            progress.update(task, description=f"Indexing: {message}", total=total, completed=current)
-        elif event == "sync_deleting":
-            progress.update(task, description=f"Removing: {message}", total=total, completed=current)
-
-    return on_sync_progress
-
-
-def _make_index_progress_callback(progress, task):
-    """Create a progress callback for index_directory."""
-
-    def on_progress(event: str, current: int, total: int, message: str) -> None:
-        if event == "discovery":
-            progress.update(task, description=f"Found {total} files", total=total, completed=0)
-        elif event == "loading":
+        elif event == ProgressEvent.LOADING:
             progress.update(task, description="Loading files...", total=total, completed=current)
-        elif event == "file_loaded":
-            progress.update(
-                task,
-                description=f"Loading: {message}",
-                completed=current,
-            )
-        elif event == "file_error":
+        elif event == ProgressEvent.FILE_LOADED:
+            progress.update(task, description=f"Loading: {message}", completed=current)
+        elif event == ProgressEvent.FILE_ERROR:
             progress.update(task, completed=current)
-        elif event == "embedding":
+        elif event == ProgressEvent.EMBEDDING:
             if current == 0:
                 progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
             else:
                 progress.update(task, description=f"Embedding ({current}/{total})", completed=current)
-        elif event == "preparing":
+        elif event == ProgressEvent.PREPARING:
             if current == 0:
                 progress.update(task, description="Preparing points...", total=total, completed=0)
             else:
                 progress.update(task, description=f"Preparing ({current}/{total})", completed=current)
-        elif event == "uploading":
+        elif event == ProgressEvent.UPLOADING:
             if current == 0:
                 progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)
             else:
                 progress.update(task, description=f"Uploading ({current}/{total})", completed=current)
+        # --- incremental sync events ---
+        elif event == ProgressEvent.SYNC_DISCOVERY:
+            progress.update(task, description=f"Found {total} files", total=total, completed=0)
+        elif event == ProgressEvent.SYNC_CHECKING:
+            progress.update(task, description=f"Checking: {message}", completed=current)
+        elif event == ProgressEvent.SYNC_INDEXING:
+            progress.update(task, description=f"Indexing: {message}", total=total, completed=current)
+        elif event == ProgressEvent.SYNC_DELETING:
+            progress.update(task, description=f"Removing: {message}", total=total, completed=current)
+        # ProgressEvent.UPLOAD (per-file internal uploads during sync) is intentionally not
+        # displayed — it would interleave with sync_indexing at a too-granular level.
 
     return on_progress
 
@@ -433,7 +431,7 @@ def index(
                     exclude_patterns=exclude_patterns if exclude_patterns else None,
                     state_file=state_file,
                     force=False,
-                    on_progress=_make_sync_progress_callback(progress, task),
+                    on_progress=_make_progress_callback(progress, task),
                     chunk_size=chunk_size,
                     overlap=chunk_overlap,
                 )
@@ -463,7 +461,7 @@ def index(
                     chunker=chunker,
                     batch_size=batch_size,
                     exclude_patterns=exclude_patterns if exclude_patterns else None,
-                    on_progress=_make_index_progress_callback(progress, task),
+                    on_progress=_make_progress_callback(progress, task),
                     workers=workers,
                     embedding_batch_size=embedding_batch_size,
                 )
