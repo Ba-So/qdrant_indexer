@@ -16,6 +16,81 @@ from qdrant_indexer.loaders import (
     get_loader,
 )
 
+# ---------------------------------------------------------------------------
+# Loader-specific fixtures (only used by this file)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_text_content() -> str:
+    """Return plain text content."""
+    return """This is a plain text file.
+
+It has multiple paragraphs.
+
+And some more content here for testing purposes.
+"""
+
+
+@pytest.fixture
+def sample_text_file(tmp_path: Path, sample_text_content: str) -> Path:
+    """Create a temporary text file."""
+    file_path = tmp_path / "test.txt"
+    file_path.write_text(sample_text_content)
+    return file_path
+
+
+@pytest.fixture
+def sample_rst_content() -> str:
+    """Return ReStructuredText content."""
+    return """Test Document
+=============
+
+This is an RST document.
+
+Section
+-------
+
+Some content in a section.
+"""
+
+
+@pytest.fixture
+def sample_rst_file(tmp_path: Path, sample_rst_content: str) -> Path:
+    """Create a temporary RST file."""
+    file_path = tmp_path / "test.rst"
+    file_path.write_text(sample_rst_content)
+    return file_path
+
+
+@pytest.fixture
+def sample_rustdoc_content() -> str:
+    """Return rustdoc-style HTML structure."""
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <title>MyStruct in my_crate::module - Rust</title>
+</head>
+<body class="rustdoc struct">
+    <div class="sidebar">Sidebar content</div>
+    <div class="search-form">Search</div>
+    <h1 class="fqn">my_crate::module::MyStruct</h1>
+    <pre class="rust struct">pub struct MyStruct { /* fields */ }</pre>
+    <div class="docblock">
+        <p>Documentation for MyStruct.</p>
+    </div>
+    <footer class="rustdoc-footer">Footer</footer>
+</body>
+</html>"""
+
+
+@pytest.fixture
+def sample_rustdoc_file(tmp_path: Path, sample_rustdoc_content: str) -> Path:
+    """Create a temporary rustdoc HTML file."""
+    file_path = tmp_path / "rustdoc.html"
+    file_path.write_text(sample_rustdoc_content)
+    return file_path
+
 
 class TestMarkdownLoader:
     """Tests for MarkdownLoader."""

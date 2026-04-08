@@ -21,6 +21,76 @@ from qdrant_indexer.chunkers import (
     split_text_with_overlap,
 )
 
+# ---------------------------------------------------------------------------
+# Chunker-specific fixtures (only used by this file)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_long_text() -> str:
+    """Return a long text string (~2000 chars) for chunking tests."""
+    paragraph = "This is a test paragraph with some content. " * 10
+    return (paragraph + "\n\n") * 5
+
+
+@pytest.fixture
+def sample_markdown_with_code_blocks() -> str:
+    """Markdown with code blocks for chunking tests."""
+    return '''# Main Title
+
+Introduction paragraph.
+
+## Code Examples
+
+Here is some Python code:
+
+```python
+# This header inside code block should NOT be split
+def example():
+    """A function."""
+    return 42
+```
+
+### More Details
+
+Additional content after code block.
+
+```javascript
+// Another code block
+const x = "## Not a header";
+```
+
+## Conclusion
+
+Final section.
+'''
+
+
+@pytest.fixture
+def sample_large_markdown() -> str:
+    """Large markdown document (~3000 chars) for chunking tests."""
+    section_content = "This is paragraph content. " * 50  # ~1350 chars per section
+    return f'''# Document Title
+
+{section_content}
+
+## First Section
+
+{section_content}
+
+### Subsection A
+
+Some shorter content here.
+
+### Subsection B
+
+More short content.
+
+## Second Section
+
+{section_content}
+'''
+
 
 class TestRecursiveChunker:
     """Tests for RecursiveChunker."""
