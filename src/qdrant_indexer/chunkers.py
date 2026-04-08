@@ -3,6 +3,7 @@
 import logging
 import re
 from abc import ABC, abstractmethod
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +18,10 @@ logger = logging.getLogger(__name__)
 class Chunker(ABC):
     """Abstract base class for text chunking strategies."""
 
+    # Each concrete subclass must declare its canonical strategy key,
+    # matching the corresponding key in the CHUNKERS registry.
+    strategy: str
+
     @abstractmethod
     def chunk(self, text: str) -> list[str]:
         """Split text into chunks.
@@ -30,12 +35,28 @@ class Chunker(ABC):
         pass
 
 
+class _WithFallback:
+    """Mixin that provides a cached RecursiveChunker fallback.
+
+    Intended for chunker classes that expose ``chunk_size`` and ``overlap``
+    attributes and need to delegate oversized or unstructured content to
+    RecursiveChunker without constructing a fresh instance at each call site.
+    """
+
+    @cached_property
+    def _fallback_chunker(self) -> "RecursiveChunker":
+        """RecursiveChunker configured with this chunker's chunk_size and overlap."""
+        return RecursiveChunker(self.chunk_size, self.overlap)  # type: ignore[attr-defined]
+
+
 class RecursiveChunker(Chunker):
     """Recursive character text splitter with semantic awareness.
 
     Splits text hierarchically using separators in order of preference:
     paragraphs -> lines -> sentences -> words.
     """
+
+    strategy = "recursive"
 
     def __init__(self, chunk_size: int = 1532, overlap: int = 200):
         """Initialize the chunker.
@@ -141,6 +162,8 @@ class RecursiveChunker(Chunker):
 class FixedSizeChunker(Chunker):
     """Simple fixed-size chunker without semantic awareness."""
 
+    strategy = "fixed"
+
     def __init__(self, chunk_size: int = 1536, overlap: int = 50):
         """Initialize the chunker.
 
@@ -236,13 +259,15 @@ def merge_small_chunks(
     return result
 
 
-class MarkdownChunker(Chunker):
+class MarkdownChunker(_WithFallback, Chunker):
     """Markdown-aware chunker that splits on header boundaries.
 
     Splits markdown documents at header boundaries (# through ######)
     while respecting chunk size limits. Falls back to RecursiveChunker
     for oversized sections or documents without headers.
     """
+
+    strategy = "markdown"
 
     def __init__(
         self,
@@ -442,7 +467,7 @@ class MarkdownChunker(Chunker):
 
         # No headers? Fall back to RecursiveChunker
         if not sections or all(s["level"] == 0 for s in sections):
-            return RecursiveChunker(self.chunk_size, self.overlap).chunk(text)
+            return self._fallback_chunker.chunk(text)
 
         chunks: list[str] = []
 
@@ -464,9 +489,7 @@ class MarkdownChunker(Chunker):
             else:
                 # Section too large, use RecursiveChunker with header context
                 header_context = self._build_header_context(merged_sections, i)
-                sub_chunks = RecursiveChunker(self.chunk_size, self.overlap).chunk(
-                    content
-                )
+                sub_chunks = self._fallback_chunker.chunk(content)
 
                 for j, sub_chunk in enumerate(sub_chunks):
                     if header_context and j > 0:
@@ -522,12 +545,14 @@ class MarkdownChunker(Chunker):
         return merged
 
 
-class CodeChunker(Chunker):
+class CodeChunker(_WithFallback, Chunker):
     """Code-aware chunker that respects symbol boundaries.
 
     Primary strategy: One chunk per symbol.
     Fallback: Split large symbols at logical points while preserving signature.
     """
+
+    strategy = "code"
 
     def __init__(
         self, chunk_size: int = 1536, overlap: int = 200, include_source: bool = True
@@ -555,7 +580,7 @@ class CodeChunker(Chunker):
             List of text chunks.
         """
         # Fallback to recursive chunking for plain text
-        return RecursiveChunker(self.chunk_size, self.overlap).chunk(text)
+        return self._fallback_chunker.chunk(text)
 
     def chunk_symbol(self, symbol: CodeSymbol) -> list[str]:
         """Chunk a single code symbol.
@@ -635,7 +660,7 @@ class CodeChunker(Chunker):
         return result
 
 
-class HTMLChunker(Chunker):
+class HTMLChunker(_WithFallback, Chunker):
     """HTML-aware chunker that splits on semantic tag boundaries.
 
     Splits HTML documents at semantic tag boundaries (article, section, main, etc.)
@@ -643,6 +668,8 @@ class HTMLChunker(Chunker):
     RecursiveChunker for oversized sections or documents without structure.
     Output is clean text with HTML tags stripped.
     """
+
+    strategy = "html"
 
     # Semantic tags to split on (in order of preference)
     SEMANTIC_TAGS = ["article", "section", "main", "aside", "header", "footer", "nav"]
@@ -799,9 +826,7 @@ class HTMLChunker(Chunker):
                 # Check if row itself is too large
                 if len(row_text) > self.chunk_size:
                     # Split the row text
-                    row_chunks = RecursiveChunker(
-                        self.chunk_size, self.overlap
-                    ).chunk(row_text)
+                    row_chunks = self._fallback_chunker.chunk(row_text)
                     chunks.extend(row_chunks)
                     current_chunk = ""
                 else:
@@ -839,13 +864,12 @@ class HTMLChunker(Chunker):
             List of chunks all within size limit.
         """
         result: list[str] = []
-        recursive = RecursiveChunker(self.chunk_size, self.overlap)
 
         for chunk in chunks:
             if len(chunk) <= self.chunk_size:
                 result.append(chunk)
             else:
-                sub_chunks = recursive.chunk(chunk)
+                sub_chunks = self._fallback_chunker.chunk(chunk)
                 result.extend(sub_chunks)
 
         return result
@@ -890,9 +914,7 @@ class HTMLChunker(Chunker):
         if not chunks:
             full_text = self._extract_text(soup)
             if full_text:
-                chunks = RecursiveChunker(self.chunk_size, self.overlap).chunk(
-                    full_text
-                )
+                chunks = self._fallback_chunker.chunk(full_text)
 
         # Add table chunks
         chunks.extend(table_chunks)
@@ -913,6 +935,8 @@ class SemanticChunker(Chunker):
     segments and splits at points where similarity drops below a threshold.
     Falls back to RecursiveChunker when semantic splitting is not effective.
     """
+
+    strategy = "semantic"
 
     # Class-level model cache
     _model: TextEmbedding | None = None
