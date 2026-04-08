@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import NamedTuple
 
 import tree_sitter_rust
 from tree_sitter import Language, Parser
@@ -11,6 +12,19 @@ from qdrant_indexer.models import CodeSymbol
 from .tree_sitter_base import TreeSitterCodeLoader
 
 logger = logging.getLogger(__name__)
+
+
+class _CommonFields(NamedTuple):
+    """Shared fields extracted from every Rust AST node."""
+
+    name: str
+    source: str
+    docstring: str | None
+    visibility: str
+    attributes: list[str]
+    generics: list[str]
+    lifetimes: list[str]
+    where_clause: str | None
 
 
 class RustCodeLoader(TreeSitterCodeLoader):
@@ -264,6 +278,62 @@ class RustCodeLoader(TreeSitterCodeLoader):
 
         return generics, lifetimes, where_clause
 
+    def _extract_common_fields(
+        self,
+        node,
+        content_bytes: bytes,
+        *,
+        name_field: str = "name",
+        name_default: str = "unknown",
+        with_visibility: bool = True,
+        with_generics: bool = True,
+    ) -> _CommonFields:
+        """Extract fields shared by every Rust symbol extractor.
+
+        Centralises the five-line preamble that previously appeared in every
+        ``_extract_*`` method: name lookup, source text, doc comment, visibility
+        modifier, outer attributes, and (optionally) generic parameters.
+
+        Args:
+            node: Tree-sitter AST node for the item.
+            content_bytes: Full source file encoded as UTF-8.
+            name_field: The tree-sitter field name used to locate the identifier
+                child, typically ``"name"``.
+            name_default: Fallback when the name field is absent (``"unknown"``
+                for most symbols, ``"UNKNOWN"`` for consts and statics).
+            with_visibility: When False the returned visibility is ``"private"``
+                without inspecting the node (used where the caller will override
+                or where visibility is semantically meaningless).
+            with_generics: When True, generic parameters, lifetime parameters,
+                and the where clause are extracted; when False all three are
+                returned as empty / None (saves work for const/static/macro/mod).
+
+        Returns:
+            A ``_CommonFields`` NamedTuple with all shared fields populated.
+        """
+        name_node = node.child_by_field_name(name_field)
+        name = self._get_node_text(name_node, content_bytes) or name_default
+        source = self._get_node_text(node, content_bytes)
+        docstring = self._extract_doc_comment(node, content_bytes)
+        visibility = self._extract_visibility(node, content_bytes) if with_visibility else "private"
+        attributes = self._extract_attributes(node, content_bytes)
+
+        if with_generics:
+            generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+        else:
+            generics, lifetimes, where_clause = [], [], None
+
+        return _CommonFields(
+            name=name,
+            source=source,
+            docstring=docstring,
+            visibility=visibility,
+            attributes=attributes,
+            generics=generics,
+            lifetimes=lifetimes,
+            where_clause=where_clause,
+        )
+
     def _extract_function(
         self, node, content_bytes: bytes, parent_name: str | None
     ) -> CodeSymbol:
@@ -277,14 +347,11 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the function.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
-        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+        cf = self._extract_common_fields(node, content_bytes)
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
+        generics, lifetimes, where_clause = cf.generics, cf.lifetimes, cf.where_clause
 
         # Check for async/unsafe/const in function_modifiers
         is_async = False
@@ -389,15 +456,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the struct.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
+        cf = self._extract_common_fields(node, content_bytes)
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
+        generics, lifetimes, where_clause = cf.generics, cf.lifetimes, cf.where_clause
         derives = self._parse_derives(attributes)
-        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
 
         # Build signature
         sig_parts = []
@@ -442,15 +506,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the enum.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
+        cf = self._extract_common_fields(node, content_bytes)
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
+        generics, lifetimes, where_clause = cf.generics, cf.lifetimes, cf.where_clause
         derives = self._parse_derives(attributes)
-        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
 
         # Extract variant names
         variants = []
@@ -506,14 +567,11 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the trait.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
-        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+        cf = self._extract_common_fields(node, content_bytes)
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
+        generics, lifetimes, where_clause = cf.generics, cf.lifetimes, cf.where_clause
 
         # Extract supertraits
         supertraits = []
@@ -587,10 +645,9 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the impl block.
         """
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
-        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+        cf = self._extract_common_fields(node, content_bytes, with_visibility=False)
+        source, docstring, attributes = cf.source, cf.docstring, cf.attributes
+        generics, lifetimes, where_clause = cf.generics, cf.lifetimes, cf.where_clause
 
         # Extract self type and trait (if impl Trait for Type)
         self_type = None
@@ -677,14 +734,11 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the type alias.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
-        generics, lifetimes, where_clause = self._extract_generics(node, content_bytes)
+        cf = self._extract_common_fields(node, content_bytes)
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
+        generics, lifetimes, where_clause = cf.generics, cf.lifetimes, cf.where_clause
 
         # Get the aliased type
         type_node = node.child_by_field_name("type")
@@ -737,13 +791,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the constant.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "UNKNOWN"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
+        cf = self._extract_common_fields(
+            node, content_bytes, name_default="UNKNOWN", with_generics=False
+        )
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
 
         # Get type
         type_node = node.child_by_field_name("type")
@@ -787,13 +840,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the static.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "UNKNOWN"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
+        cf = self._extract_common_fields(
+            node, content_bytes, name_default="UNKNOWN", with_generics=False
+        )
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
 
         # Check for mutable static
         is_mutable = False
@@ -847,12 +899,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the macro.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
+        cf = self._extract_common_fields(
+            node, content_bytes, with_visibility=False, with_generics=False
+        )
+        name, source, docstring, attributes = (
+            cf.name, cf.source, cf.docstring, cf.attributes
+        )
 
         # Check for macro_export
         is_exported = any("#[macro_export]" in attr for attr in attributes)
@@ -886,19 +938,18 @@ class RustCodeLoader(TreeSitterCodeLoader):
         Returns:
             CodeSymbol representing the module, or None if it's an external mod declaration.
         """
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
-
         # Check if this is an inline module (has body) vs external mod declaration
         body = node.child_by_field_name("body")
         if not body:
             # External mod declaration like `mod utils;` - skip
             return None
 
-        source = self._get_node_text(node, content_bytes)
-        docstring = self._extract_doc_comment(node, content_bytes)
-        visibility = self._extract_visibility(node, content_bytes)
-        attributes = self._extract_attributes(node, content_bytes)
+        cf = self._extract_common_fields(
+            node, content_bytes, with_generics=False
+        )
+        name, source, docstring, visibility, attributes = (
+            cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
+        )
 
         # Build signature
         sig_parts = []
