@@ -463,7 +463,7 @@ class MarkdownChunker(Chunker):
                 chunks.append(content)
             else:
                 # Section too large, use RecursiveChunker with header context
-                header_context = self._build_header_context(sections, i)
+                header_context = self._build_header_context(merged_sections, i)
                 sub_chunks = RecursiveChunker(self.chunk_size, self.overlap).chunk(
                     content
                 )

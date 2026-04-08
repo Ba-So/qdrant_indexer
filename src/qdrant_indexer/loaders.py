@@ -119,7 +119,15 @@ class PDFLoader(DocumentLoader):
         Extracts available PDF metadata (title, author, subject, keywords,
         creation date, etc.) when present.
         """
-        md_text = pymupdf4llm.to_markdown(str(path))
+        try:
+            md_text = pymupdf4llm.to_markdown(str(path))
+        except Exception as e:
+            logger.warning(
+                "pymupdf4llm failed, falling back to raw text extraction: %s (%s)",
+                path.name,
+                e,
+            )
+            md_text = self._extract_raw_text(path)
 
         if self._is_garbled(md_text):
             logger.warning(
