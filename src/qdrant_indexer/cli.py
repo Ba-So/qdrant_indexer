@@ -2,6 +2,7 @@
 
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -137,16 +138,19 @@ def _display_index_summary(
             console.print(f"  [red]•[/red] {failed}")
 
 
-# Global verbosity level
-_verbosity = 0
-_quiet = False
+@dataclass
+class _CliState:
+    verbosity: int = 0
+    quiet: bool = False
+
+
+_state = _CliState()
 
 
 def setup_logging(verbose: int, quiet: bool) -> None:
     """Configure logging based on verbosity level."""
-    global _verbosity, _quiet
-    _verbosity = verbose
-    _quiet = quiet
+    _state.verbosity = verbose
+    _state.quiet = quiet
 
     if quiet:
         level = logging.WARNING
@@ -171,7 +175,7 @@ def display_error(message: str) -> None:
 
 def display_success(message: str) -> None:
     """Display a success message with formatting."""
-    if not _quiet:
+    if not _state.quiet:
         console.print(f"[green]✓[/green] {message}")
 
 
@@ -623,8 +627,7 @@ def clean(
         # Skip confirmation prompt
         qdrant-indexer clean ./docs -c my-docs -y
     """
-    global _quiet
-    _quiet = quiet
+    _state.quiet = quiet
 
     if not path.exists() or not path.is_dir():
         display_error(f"Path does not exist or is not a directory: {path}")
@@ -750,8 +753,7 @@ def list_collections(
     ] = False,
 ) -> None:
     """List all Qdrant collections with their point counts."""
-    global _quiet
-    _quiet = quiet
+    _state.quiet = quiet
 
     try:
         client = QdrantClient(url=url)
@@ -807,8 +809,7 @@ def delete_collection(
     ] = False,
 ) -> None:
     """Delete a Qdrant collection."""
-    global _quiet
-    _quiet = quiet
+    _state.quiet = quiet
 
     try:
         client = QdrantClient(url=url)
