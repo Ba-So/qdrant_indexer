@@ -518,6 +518,37 @@ class QdrantIndexer:
 
         return chunk_count, chunk_ids, image_count, image_ids
 
+    def _upsert_batched(
+        self,
+        collection_name: str,
+        points: list[PointStruct],
+        batch_size: int,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> int:
+        """Upload a list of PointStructs to Qdrant in fixed-size batches.
+
+        Args:
+            collection_name: Target Qdrant collection.
+            points: All points to upload.
+            batch_size: Maximum number of points per upsert call.
+            on_progress: Optional callback invoked after each batch with
+                         (uploaded_so_far, total) so callers can translate to
+                         their own progress event vocabulary.
+
+        Returns:
+            Total number of points uploaded.
+        """
+        total = len(points)
+        uploaded = 0
+        for i in range(0, total, batch_size):
+            batch = points[i : i + batch_size]
+            logger.debug(f"Uploading batch of {len(batch)} points")
+            self.client.upsert(collection_name=collection_name, points=batch)
+            uploaded += len(batch)
+            if on_progress:
+                on_progress(uploaded, total)
+        return uploaded
+
     def _index_regular_file(
         self,
         doc,
@@ -545,7 +576,6 @@ class QdrantIndexer:
             return 0, []
 
         total_chunks = len(chunks)
-        points_batch: list[PointStruct] = []
         point_ids: list[int] = []
 
         if on_progress:
@@ -555,6 +585,7 @@ class QdrantIndexer:
         logger.debug(f"Generating embeddings for {total_chunks} chunks")
         embeddings = list(self.embeddings.embed(chunks))
 
+        all_points: list[PointStruct] = []
         for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
             point_id = self._generate_point_id(file_path, i)
             point_ids.append(point_id)
@@ -565,8 +596,7 @@ class QdrantIndexer:
                 total_chunks=total_chunks,
                 metadata=doc.metadata,
             )
-
-            points_batch.append(
+            all_points.append(
                 PointStruct(
                     id=point_id,
                     vector={self._vector_name: list(vector)},
@@ -574,29 +604,11 @@ class QdrantIndexer:
                 )
             )
 
-            if len(points_batch) >= batch_size:
-                logger.debug(f"Uploading batch of {len(points_batch)} points")
-                self.client.upsert(
-                    collection_name=self.collection,
-                    points=points_batch,
-                )
-                points_batch = []
+        def _progress(uploaded: int, total: int) -> None:
+            if on_progress:
+                on_progress("upload", uploaded, total, f"Uploaded {uploaded}/{total}")
 
-                if on_progress:
-                    on_progress(
-                        "upload",
-                        i + 1,
-                        total_chunks,
-                        f"Uploaded {i + 1}/{total_chunks}",
-                    )
-
-        # Upload remaining points
-        if points_batch:
-            logger.debug(f"Uploading final batch of {len(points_batch)} points")
-            self.client.upsert(
-                collection_name=self.collection,
-                points=points_batch,
-            )
+        self._upsert_batched(self.collection, all_points, batch_size, _progress)
 
         logger.info(f"Indexed {file_path.name}: {total_chunks} chunks")
         return total_chunks, point_ids
@@ -645,7 +657,6 @@ class QdrantIndexer:
             return 0, []
 
         total_chunks = len(chunks_with_symbols)
-        points_batch: list[PointStruct] = []
         point_ids: list[int] = []
 
         if on_progress:
@@ -656,6 +667,7 @@ class QdrantIndexer:
         chunk_texts = [chunk_text for chunk_text, _ in chunks_with_symbols]
         embeddings = list(self.embeddings.embed(chunk_texts))
 
+        all_points: list[PointStruct] = []
         for i, ((chunk_text, symbol), vector) in enumerate(
             zip(chunks_with_symbols, embeddings)
         ):
@@ -669,8 +681,7 @@ class QdrantIndexer:
                 total_chunks=total_chunks,
                 metadata=doc.metadata,
             )
-
-            points_batch.append(
+            all_points.append(
                 PointStruct(
                     id=point_id,
                     vector={self._vector_name: list(vector)},
@@ -678,29 +689,11 @@ class QdrantIndexer:
                 )
             )
 
-            if len(points_batch) >= batch_size:
-                logger.debug(f"Uploading batch of {len(points_batch)} points")
-                self.client.upsert(
-                    collection_name=self.collection,
-                    points=points_batch,
-                )
-                points_batch = []
+        def _progress(uploaded: int, total: int) -> None:
+            if on_progress:
+                on_progress("upload", uploaded, total, f"Uploaded {uploaded}/{total}")
 
-                if on_progress:
-                    on_progress(
-                        "upload",
-                        i + 1,
-                        total_chunks,
-                        f"Uploaded {i + 1}/{total_chunks}",
-                    )
-
-        # Upload remaining points
-        if points_batch:
-            logger.debug(f"Uploading final batch of {len(points_batch)} points")
-            self.client.upsert(
-                collection_name=self.collection,
-                points=points_batch,
-            )
+        self._upsert_batched(self.collection, all_points, batch_size, _progress)
 
         logger.info(f"Indexed {file_path.name}: {total_chunks} code chunks")
         return total_chunks, point_ids
@@ -1112,22 +1105,18 @@ class QdrantIndexer:
         if on_progress:
             on_progress("uploading", 0, total_chunks, "Uploading to Qdrant...")
 
-        uploaded_count = 0
-        for i in range(0, len(all_points), batch_size):
-            points_batch = all_points[i : i + batch_size]
-            self.client.upsert(
-                collection_name=self.collection,
-                points=points_batch,
-            )
-            uploaded_count += len(points_batch)
-
+        def _progress(uploaded: int, total: int) -> None:
             if on_progress:
                 on_progress(
                     "uploading",
-                    uploaded_count,
-                    total_chunks,
-                    f"Uploaded {uploaded_count}/{total_chunks}",
+                    uploaded,
+                    total,
+                    f"Uploaded {uploaded}/{total}",
                 )
+
+        uploaded_count = self._upsert_batched(
+            self.collection, all_points, batch_size, _progress
+        )
 
         if on_progress:
             on_progress("uploading", total_chunks, total_chunks, "Upload complete")
@@ -1621,7 +1610,6 @@ class QdrantIndexer:
         image_embedder = self._get_image_embeddings()
         total_images = len(images)
         point_ids: list[int] = []
-        points_batch: list[PointStruct] = []
 
         logger.debug(f"Generating CLIP embeddings for {total_images} images")
 
@@ -1635,6 +1623,7 @@ class QdrantIndexer:
         # Generate embeddings
         embeddings = list(image_embedder.embed(pil_images))
 
+        all_points: list[PointStruct] = []
         for i, (image, vector) in enumerate(zip(images, embeddings)):
             point_id = self._generate_image_point_id(file_path, i)
             point_ids.append(point_id)
@@ -1647,7 +1636,7 @@ class QdrantIndexer:
                 metadata=metadata,
             )
 
-            points_batch.append(
+            all_points.append(
                 PointStruct(
                     id=point_id,
                     vector={self._clip_vector_name: list(vector)},
@@ -1655,19 +1644,7 @@ class QdrantIndexer:
                 )
             )
 
-            if len(points_batch) >= batch_size:
-                self.client.upsert(
-                    collection_name=self.collection,
-                    points=points_batch,
-                )
-                points_batch = []
-
-        # Upload remaining points
-        if points_batch:
-            self.client.upsert(
-                collection_name=self.collection,
-                points=points_batch,
-            )
+        self._upsert_batched(self.collection, all_points, batch_size)
 
         logger.info(f"Indexed {total_images} images from {file_path.name}")
         return total_images, point_ids
