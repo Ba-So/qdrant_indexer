@@ -34,6 +34,11 @@ from .config import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_BATCH_SIZE, DEFAU
 # Default CLIP vision model for image embeddings
 DEFAULT_CLIP_VISION_MODEL = "Qdrant/clip-ViT-B-32-vision"
 
+DEFAULT_INDEX_PATTERNS = [
+    "**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst",
+    "**/*.py", "**/*.php", "**/*.html", "**/*.htm",
+]
+
 
 def get_model_info(model_name: str) -> dict:
     """Get model information from FastEmbed.
@@ -946,7 +951,7 @@ class QdrantIndexer:
                                 "file_loaded",
                                 files_loaded,
                                 total_files,
-                                f"Loaded {file_path.name}: {len(chunks)} chunks",
+                                file_path.name,
                             )
 
         # Process other files with ThreadPoolExecutor
@@ -980,7 +985,7 @@ class QdrantIndexer:
                                     "file_loaded",
                                     files_loaded,
                                     total_files,
-                                    f"Loaded {file_path.name}: {len(result.chunks)} chunks",
+                                    file_path.name,
                                 )
                     except Exception as e:
                         failed_files.append(f"{file_path}: {e}")
@@ -993,7 +998,7 @@ class QdrantIndexer:
         all_chunks: list[PreparedChunk],
         embedding_batch_size: int,
         on_progress: ProgressCallback | None,
-    ) -> list:
+    ) -> list[list[float]]:
         """Generate embeddings for all chunks in fixed-size batches.
 
         Batching avoids GPU out-of-memory errors when the chunk list is large.
@@ -1139,6 +1144,8 @@ class QdrantIndexer:
         on_progress: ProgressCallback | None = None,
         workers: int = DEFAULT_WORKERS,
         embedding_batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE,
+        chunk_size: int = 1536,
+        overlap: int = 200,
     ) -> dict:
         """Index all matching files in a directory with parallel processing.
 
@@ -1152,12 +1159,14 @@ class QdrantIndexer:
             workers: Number of parallel workers for file loading (default: CPU count, max 4).
             embedding_batch_size: Number of chunks to embed at once (default: 64).
                 Smaller values use less GPU memory.
+            chunk_size: Chunk size for auto-selected chunker (used when chunker is None).
+            overlap: Overlap for auto-selected chunker (used when chunker is None).
 
         Returns:
             Summary dict with total_files, total_chunks, failed_files, and skipped_files.
         """
         if patterns is None:
-            patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"]
+            patterns = DEFAULT_INDEX_PATTERNS
 
         # Note: chunker=None signals auto-selection per file
         # (handled in _load_and_chunk_file)
@@ -1186,8 +1195,8 @@ class QdrantIndexer:
         loaded_files, failed_files = self._load_files_parallel(
             files=files,
             chunker=chunker,
-            chunk_size=1536,
-            overlap=200,
+            chunk_size=chunk_size,
+            overlap=overlap,
             workers=workers,
             on_progress=on_progress,
             total_files=total_files_to_process,
@@ -1267,14 +1276,7 @@ class QdrantIndexer:
 
         # Discover current files
         if patterns is None:
-            patterns = [
-                "**/*.md",
-                "**/*.txt",
-                "**/*.pdf",
-                "**/*.rst",
-                "**/*.py",
-                "**/*.php",
-            ]
+            patterns = DEFAULT_INDEX_PATTERNS
 
         files, _ = self._discover_files(path, patterns, exclude_patterns)
 

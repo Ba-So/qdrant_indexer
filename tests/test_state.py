@@ -39,6 +39,8 @@ class TestIndexState:
             indexed_at="2024-01-01T00:00:00Z",
             chunk_count=3,
             chunk_ids=[1, 2, 3],
+            image_count=2,
+            image_ids=[10, 11],
         )
         state.set_file_state(Path("/test/file.txt"), file_state)
 
@@ -56,6 +58,32 @@ class TestIndexState:
         assert loaded_state.content_hash == "abc123"
         assert loaded_state.chunk_count == 3
         assert loaded_state.chunk_ids == [1, 2, 3]
+        assert loaded_state.image_count == 2
+        assert loaded_state.image_ids == [10, 11]
+
+    def test_save_and_load_with_images(self, tmp_path):
+        """Test that image_count and image_ids survive a save/load cycle."""
+        state_file = tmp_path / "state.json"
+        state = IndexState(state_file)
+
+        file_state = IndexedFileState(
+            path="/test/doc.pdf",
+            content_hash="deadbeef",
+            indexed_at="2024-06-01T12:00:00Z",
+            chunk_count=5,
+            chunk_ids=[100, 101, 102, 103, 104],
+            image_count=3,
+            image_ids=[200, 201, 202],
+        )
+        state.set_file_state(Path("/test/doc.pdf"), file_state)
+        state.save()
+
+        loaded = IndexState(state_file)
+        loaded.load()
+        result = loaded.get_file_state(Path("/test/doc.pdf"))
+        assert result is not None
+        assert result.image_count == 3
+        assert result.image_ids == [200, 201, 202]
 
     def test_json_format(self, tmp_path):
         """Test that JSON format is correct."""

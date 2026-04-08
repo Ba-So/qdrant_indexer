@@ -26,6 +26,7 @@ from qdrant_indexer.indexer import (
     DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
     DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_INDEX_PATTERNS,
     DEFAULT_WORKERS,
     QdrantIndexer,
     is_cuda_available,
@@ -62,7 +63,7 @@ def _make_index_progress_callback(progress, task):
         elif event == "file_loaded":
             progress.update(
                 task,
-                description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}",
+                description=f"Loading: {message}",
                 completed=current,
             )
         elif event == "file_error":
@@ -206,16 +207,7 @@ def index(
         typer.Option(
             "--pattern", "-p", help="Glob patterns for files (can be repeated)"
         ),
-    ] = [
-        "**/*.md",
-        "**/*.txt",
-        "**/*.pdf",
-        "**/*.rst",
-        "**/*.py",
-        "**/*.php",
-        "**/*.html",
-        "**/*.htm",
-    ],
+    ] = DEFAULT_INDEX_PATTERNS,
     batch_size: Annotated[
         int, typer.Option("--batch-size", help="Batch size for uploads")
     ] = 100,
@@ -494,16 +486,7 @@ def status(
     ] = None,
     pattern: Annotated[
         list[str], typer.Option("--pattern", "-p", help="Glob patterns for files")
-    ] = [
-        "**/*.md",
-        "**/*.txt",
-        "**/*.pdf",
-        "**/*.rst",
-        "**/*.py",
-        "**/*.php",
-        "**/*.html",
-        "**/*.htm",
-    ],
+    ] = DEFAULT_INDEX_PATTERNS,
     exclude: Annotated[
         Optional[list[str]], typer.Option("--exclude", "-e", help="Patterns to exclude")
     ] = None,

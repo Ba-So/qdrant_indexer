@@ -82,8 +82,8 @@ class IndexedPoint:
 class CodeSymbol:
     """Represents an extracted code symbol (function, class, method, constant).
 
-    Used by code loaders to represent parsed symbols from Python and PHP source
-    files before chunking and indexing.
+    Used by code loaders to represent parsed symbols from Python, PHP, and Rust
+    source files before chunking and indexing.
 
     Attributes:
         name: Symbol name (e.g., 'parse_segment').
@@ -96,7 +96,7 @@ class CodeSymbol:
         line_end: Ending line number in source file (1-indexed).
         parent: Parent class name for methods, None for top-level symbols.
         visibility: Access modifier for PHP ('public', 'private', 'protected'), None for Python.
-        language: Source language ('python' or 'php').
+        language: Source language ('python', 'php', or 'rust').
         metadata: Additional language-specific metadata (e.g., decorators, base classes).
     """
 
@@ -125,6 +125,8 @@ class IndexedFileState:
         chunk_count: Number of chunks created.
         chunk_ids: Point IDs in Qdrant.
         mtime: File modification time (for fast change detection).
+        image_count: Number of images extracted and indexed from the file.
+        image_ids: Point IDs for image embeddings in Qdrant.
     """
 
     path: str
