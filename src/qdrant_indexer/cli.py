@@ -22,13 +22,12 @@ from rich.progress import (
 from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
-from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, discover_files
+from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_INDEX_PATTERNS, discover_files
 from qdrant_indexer.models import IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.indexer import (
     DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
     DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_INDEX_PATTERNS,
     DEFAULT_WORKERS,
     QdrantIndexer,
     is_cuda_available,
