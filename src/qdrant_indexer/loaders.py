@@ -75,6 +75,257 @@ class TextLoader(DocumentLoader):
         )
 
 
+class PDFImageExtractor:
+    """Extracts and deduplicates images from PDF pages.
+
+    Encapsulates all image-extraction logic so that PDFLoader stays focused
+    on text and metadata concerns.  PDFLoader holds an instance of this class
+    and delegates image-related calls to it.
+    """
+
+    # Minimum pixel dimension (width AND height) an image must have to be kept.
+    MIN_IMAGE_SIZE: int = 100
+
+    # Points added around an image bbox when harvesting surrounding text.
+    SURROUNDING_TEXT_MARGIN: int = 50
+
+    # Maximum characters kept from surrounding-text result (excess is truncated).
+    SURROUNDING_TEXT_LIMIT: int = 500
+
+    # Points below the image bottom edge that are searched for a caption.
+    CAPTION_SEARCH_DISTANCE: int = 100
+
+    # Horizontal padding added when building the caption search rectangle.
+    CAPTION_HORIZONTAL_PADDING: int = 20
+
+    # Maximum characters kept from a detected caption (excess is truncated).
+    CAPTION_CHAR_LIMIT: int = 300
+
+    def __init__(self, min_image_size: int = MIN_IMAGE_SIZE) -> None:
+        """Initialize the extractor.
+
+        Args:
+            min_image_size: Minimum pixel dimension for images to be kept.
+        """
+        self.min_image_size = min_image_size
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def extract_images(self, path: Path) -> list[ExtractedImage]:
+        """Extract unique, size-filtered images from every page of a PDF.
+
+        Opens the document, iterates pages, converts each qualifying raw image
+        to PNG, deduplicates by MD5 hash, and attaches surrounding text and
+        caption context before returning the collected results.
+
+        Args:
+            path: Path to the PDF file.
+
+        Returns:
+            List of ExtractedImage objects ordered by page then appearance.
+        """
+        import hashlib
+        import io
+
+        from PIL import Image
+
+        images: list[ExtractedImage] = []
+        seen_hashes: set[str] = set()
+
+        doc = fitz.open(path)
+        try:
+            for page_num, page in enumerate(doc, start=1):
+                for img_info in page.get_images(full=True):
+                    xref = img_info[0]
+                    image = self._process_single_image(
+                        doc, page, page_num, xref, seen_hashes, hashlib, io, Image
+                    )
+                    if image is not None:
+                        images.append(image)
+        finally:
+            doc.close()
+
+        return images
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _process_single_image(
+        self,
+        doc: fitz.Document,
+        page: fitz.Page,
+        page_num: int,
+        xref: int,
+        seen_hashes: set[str],
+        hashlib,
+        io,
+        Image,
+    ) -> ExtractedImage | None:
+        """Extract, convert, and annotate one image xref from a page.
+
+        Returns None when the image should be skipped (too small, unreadable,
+        or already seen).
+        """
+        try:
+            base_image = doc.extract_image(xref)
+            if not base_image:
+                return None
+
+            image_bytes = base_image["image"]
+            width = base_image.get("width", 0)
+            height = base_image.get("height", 0)
+
+            if width < self.min_image_size or height < self.min_image_size:
+                return None
+
+            png_data = self._to_png(image_bytes, io, Image)
+            if png_data is None:
+                return None
+
+            image_hash = hashlib.md5(png_data).hexdigest()
+            if image_hash in seen_hashes:
+                return None
+            seen_hashes.add(image_hash)
+
+            bbox = self._get_image_bbox(page, xref)
+            if bbox is None:
+                bbox = (0.0, 0.0, float(width), float(height))
+
+            return ExtractedImage(
+                image_data=png_data,
+                page_number=page_num,
+                bbox=bbox,
+                width=width,
+                height=height,
+                surrounding_text=self._get_surrounding_text(page, bbox),
+                caption=self._detect_caption(page, bbox),
+                image_hash=image_hash,
+            )
+        except Exception:
+            return None
+
+    def _to_png(self, image_bytes: bytes, io, Image) -> bytes | None:
+        """Convert raw image bytes to PNG format using Pillow.
+
+        Returns None when Pillow cannot decode the image.
+        """
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            return buf.getvalue()
+        except Exception:
+            return None
+
+    def _get_image_bbox(
+        self, page: fitz.Page, xref: int
+    ) -> tuple[float, float, float, float] | None:
+        """Return the bounding box of an image on a page, or None if absent.
+
+        Args:
+            page: PyMuPDF page object.
+            xref: Image xref ID.
+
+        Returns:
+            Bounding box as (x0, y0, x1, y1) or None if not found.
+        """
+        for img in page.get_images(full=True):
+            if img[0] == xref:
+                img_rects = page.get_image_rects(xref)
+                if img_rects:
+                    rect = img_rects[0]
+                    return (rect.x0, rect.y0, rect.x1, rect.y1)
+        return None
+
+    def _get_surrounding_text(
+        self, page: fitz.Page, bbox: tuple[float, float, float, float]
+    ) -> str | None:
+        """Extract text from a margin around the image bbox.
+
+        The expanded rectangle is clipped to the page boundaries so it never
+        requests text outside the page.
+
+        Args:
+            page: PyMuPDF page object.
+            bbox: Image bounding box as (x0, y0, x1, y1).
+
+        Returns:
+            Up to SURROUNDING_TEXT_LIMIT characters of nearby text, or None.
+        """
+        x0, y0, x1, y1 = bbox
+        page_rect = page.rect
+        margin = self.SURROUNDING_TEXT_MARGIN
+
+        expanded_rect = fitz.Rect(
+            max(0, x0 - margin),
+            max(0, y0 - margin),
+            min(page_rect.width, x1 + margin),
+            min(page_rect.height, y1 + margin),
+        )
+
+        texts = [
+            block[4].strip()
+            for block in page.get_text("blocks", clip=expanded_rect)
+            if len(block) >= 5 and isinstance(block[4], str) and block[4].strip()
+        ]
+
+        if not texts:
+            return None
+
+        combined = " ".join(texts)
+        if len(combined) > self.SURROUNDING_TEXT_LIMIT:
+            combined = combined[: self.SURROUNDING_TEXT_LIMIT] + "..."
+        return combined
+
+    def _detect_caption(
+        self, page: fitz.Page, bbox: tuple[float, float, float, float]
+    ) -> str | None:
+        """Find a caption in the region directly below an image.
+
+        Looks for text matching common figure/table caption patterns
+        (e.g. "Figure 1:", "Fig. 2 -", "Table 3:") within
+        CAPTION_SEARCH_DISTANCE points below the image bottom edge.
+
+        Args:
+            page: PyMuPDF page object.
+            bbox: Image bounding box as (x0, y0, x1, y1).
+
+        Returns:
+            Caption text (truncated to CAPTION_CHAR_LIMIT) or None.
+        """
+        import re
+
+        x0, y0, x1, y1 = bbox
+        page_rect = page.rect
+        pad = self.CAPTION_HORIZONTAL_PADDING
+
+        caption_rect = fitz.Rect(
+            max(0, x0 - pad),
+            y1,
+            min(page_rect.width, x1 + pad),
+            min(page_rect.height, y1 + self.CAPTION_SEARCH_DISTANCE),
+        )
+
+        caption_pattern = re.compile(
+            r"^(Figure|Fig\.?|Table|Plate|Image|Photo|Diagram|Chart|Graph|Illustration)\s*"
+            r"(\d+(?:\.\d+)?)\s*[:\.\-—–]?\s*(.*)$",
+            re.IGNORECASE,
+        )
+
+        for block in page.get_text("blocks", clip=caption_rect):
+            if len(block) >= 5 and isinstance(block[4], str):
+                text = block[4].strip()
+                if text and caption_pattern.match(text):
+                    if len(text) > self.CAPTION_CHAR_LIMIT:
+                        text = text[: self.CAPTION_CHAR_LIMIT] + "..."
+                    return text
+
+        return None
+
+
 class PDFLoader(DocumentLoader):
     """Loader for PDF files using pymupdf4llm for LLM-optimized extraction."""
 
@@ -93,7 +344,7 @@ class PDFLoader(DocumentLoader):
     def __init__(
         self,
         extract_images: bool = False,
-        min_image_size: int = 100,
+        min_image_size: int = PDFImageExtractor.MIN_IMAGE_SIZE,
     ):
         """Initialize PDF loader.
 
@@ -103,7 +354,12 @@ class PDFLoader(DocumentLoader):
                            Images smaller than this are filtered out.
         """
         self.extract_images_enabled = extract_images
-        self.min_image_size = min_image_size
+        self._image_extractor = PDFImageExtractor(min_image_size=min_image_size)
+
+    @property
+    def min_image_size(self) -> int:
+        """Minimum image dimension in pixels (delegates to image extractor)."""
+        return self._image_extractor.min_image_size
 
     # Threshold for replacement character ratio above which text is considered garbled
     GARBLED_THRESHOLD = 0.3
@@ -290,11 +546,15 @@ class PDFLoader(DocumentLoader):
         doc.close()
         return "\n\n".join(pages)
 
+    # ------------------------------------------------------------------
+    # Image extraction — delegates to PDFImageExtractor
+    # ------------------------------------------------------------------
+
     def extract_images(self, path: Path) -> list[ExtractedImage]:
         """Extract images from a PDF file.
 
-        Uses PyMuPDF to extract embedded images, converts them to PNG format,
-        and captures surrounding text and captions for context.
+        Delegates to PDFImageExtractor, which handles size filtering,
+        PNG conversion, deduplication, and caption/context collection.
 
         Args:
             path: Path to the PDF file.
@@ -302,202 +562,25 @@ class PDFLoader(DocumentLoader):
         Returns:
             List of ExtractedImage objects with image data and metadata.
         """
-        import hashlib
-        import io
-
-        from PIL import Image
-
-        images: list[ExtractedImage] = []
-        seen_hashes: set[str] = set()
-
-        doc = fitz.open(path)
-
-        for page_num, page in enumerate(doc, start=1):
-            image_list = page.get_images(full=True)
-
-            for img_index, img_info in enumerate(image_list):
-                xref = img_info[0]
-
-                try:
-                    base_image = doc.extract_image(xref)
-                    if not base_image:
-                        continue
-
-                    image_bytes = base_image["image"]
-                    width = base_image.get("width", 0)
-                    height = base_image.get("height", 0)
-
-                    # Filter by minimum size
-                    if width < self.min_image_size or height < self.min_image_size:
-                        continue
-
-                    # Convert to PNG for consistency
-                    try:
-                        img = Image.open(io.BytesIO(image_bytes))
-                        png_buffer = io.BytesIO()
-                        img.save(png_buffer, format="PNG")
-                        png_data = png_buffer.getvalue()
-                    except Exception:
-                        # If PIL fails, skip this image
-                        continue
-
-                    # Compute MD5 hash for deduplication
-                    image_hash = hashlib.md5(png_data).hexdigest()
-
-                    # Skip duplicates
-                    if image_hash in seen_hashes:
-                        continue
-                    seen_hashes.add(image_hash)
-
-                    # Get image bounding box on the page
-                    bbox = self._get_image_bbox(page, xref)
-                    if bbox is None:
-                        # Fallback: use full page dimensions
-                        bbox = (0.0, 0.0, float(width), float(height))
-
-                    # Extract surrounding text
-                    surrounding_text = self._get_surrounding_text(page, bbox)
-
-                    # Detect caption
-                    caption = self._detect_caption(page, bbox)
-
-                    images.append(
-                        ExtractedImage(
-                            image_data=png_data,
-                            page_number=page_num,
-                            bbox=bbox,
-                            width=width,
-                            height=height,
-                            surrounding_text=surrounding_text,
-                            caption=caption,
-                            image_hash=image_hash,
-                        )
-                    )
-
-                except Exception:
-                    # Skip problematic images
-                    continue
-
-        doc.close()
-        return images
+        return self._image_extractor.extract_images(path)
 
     def _get_image_bbox(
         self, page: fitz.Page, xref: int
     ) -> tuple[float, float, float, float] | None:
-        """Get the bounding box of an image on a page.
-
-        Args:
-            page: PyMuPDF page object.
-            xref: Image xref ID.
-
-        Returns:
-            Bounding box as (x0, y0, x1, y1) or None if not found.
-        """
-        for img in page.get_images(full=True):
-            if img[0] == xref:
-                # Try to get the image rectangle from the page
-                img_rects = page.get_image_rects(xref)
-                if img_rects:
-                    rect = img_rects[0]
-                    return (rect.x0, rect.y0, rect.x1, rect.y1)
-        return None
+        """Delegate to PDFImageExtractor._get_image_bbox."""
+        return self._image_extractor._get_image_bbox(page, xref)
 
     def _get_surrounding_text(
         self, page: fitz.Page, bbox: tuple[float, float, float, float]
     ) -> str | None:
-        """Extract text surrounding an image.
-
-        Gets text from a region around the image bounding box to provide
-        context for the image.
-
-        Args:
-            page: PyMuPDF page object.
-            bbox: Image bounding box as (x0, y0, x1, y1).
-
-        Returns:
-            Surrounding text or None if not found.
-        """
-        x0, y0, x1, y1 = bbox
-        page_rect = page.rect
-
-        # Expand bbox to capture surrounding text (50 points margin)
-        margin = 50
-        expanded_rect = fitz.Rect(
-            max(0, x0 - margin),
-            max(0, y0 - margin),
-            min(page_rect.width, x1 + margin),
-            min(page_rect.height, y1 + margin),
-        )
-
-        # Get text blocks in the expanded region
-        text_blocks = page.get_text("blocks", clip=expanded_rect)
-
-        # Collect text from blocks (block format: (x0, y0, x1, y1, text, ...))
-        texts = []
-        for block in text_blocks:
-            if len(block) >= 5 and isinstance(block[4], str):
-                text = block[4].strip()
-                if text:
-                    texts.append(text)
-
-        if texts:
-            # Limit to a reasonable length
-            combined = " ".join(texts)
-            if len(combined) > 500:
-                combined = combined[:500] + "..."
-            return combined
-
-        return None
+        """Delegate to PDFImageExtractor._get_surrounding_text."""
+        return self._image_extractor._get_surrounding_text(page, bbox)
 
     def _detect_caption(
         self, page: fitz.Page, bbox: tuple[float, float, float, float]
     ) -> str | None:
-        """Detect caption for an image.
-
-        Looks for text below the image that matches common caption patterns
-        like "Figure 1:", "Fig. 2:", "Table 1:", etc.
-
-        Args:
-            page: PyMuPDF page object.
-            bbox: Image bounding box as (x0, y0, x1, y1).
-
-        Returns:
-            Caption text or None if not found.
-        """
-        import re
-
-        x0, y0, x1, y1 = bbox
-        page_rect = page.rect
-
-        # Look for caption below the image (within 100 points)
-        caption_rect = fitz.Rect(
-            max(0, x0 - 20),  # Slightly wider than image
-            y1,  # Start at bottom of image
-            min(page_rect.width, x1 + 20),
-            min(page_rect.height, y1 + 100),  # Up to 100 points below
-        )
-
-        text_blocks = page.get_text("blocks", clip=caption_rect)
-
-        # Caption patterns
-        caption_pattern = re.compile(
-            r"^(Figure|Fig\.?|Table|Plate|Image|Photo|Diagram|Chart|Graph|Illustration)\s*"
-            r"(\d+(?:\.\d+)?)\s*[:\.\-—–]?\s*(.*)$",
-            re.IGNORECASE,
-        )
-
-        for block in text_blocks:
-            if len(block) >= 5 and isinstance(block[4], str):
-                text = block[4].strip()
-                if text:
-                    match = caption_pattern.match(text)
-                    if match:
-                        # Return the full caption text
-                        if len(text) > 300:
-                            text = text[:300] + "..."
-                        return text
-
-        return None
+        """Delegate to PDFImageExtractor._detect_caption."""
+        return self._image_extractor._detect_caption(page, bbox)
 
 
 class ReStructuredTextLoader(DocumentLoader):
