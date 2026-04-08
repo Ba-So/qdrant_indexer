@@ -22,7 +22,7 @@ from qdrant_client.models import (
 )
 
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
-from qdrant_indexer.filters import _glob_and_dedup, filter_files
+from qdrant_indexer.filters import DEFAULT_INDEX_PATTERNS, _glob_and_dedup, filter_files
 from qdrant_indexer.loaders import get_loader
 from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
@@ -34,10 +34,8 @@ from .config import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_BATCH_SIZE, DEFAU
 # Default CLIP vision model for image embeddings
 DEFAULT_CLIP_VISION_MODEL = "Qdrant/clip-ViT-B-32-vision"
 
-DEFAULT_INDEX_PATTERNS = [
-    "**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst",
-    "**/*.py", "**/*.php", "**/*.html", "**/*.htm",
-]
+# Re-exported for backward compatibility — canonical definition lives in filters.py.
+__all__ = ["DEFAULT_INDEX_PATTERNS"]
 
 
 def get_model_info(model_name: str) -> dict:

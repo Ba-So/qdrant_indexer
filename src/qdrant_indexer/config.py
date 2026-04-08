@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from qdrant_indexer.filters import DEFAULT_INDEX_PATTERNS
+
 # Default embedding model name
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -49,7 +51,7 @@ class IndexingConfig:
     """Indexing behavior configuration."""
 
     batch_size: int = 100
-    pattern: str = "**/*.md"
+    patterns: list[str] = field(default_factory=lambda: list(DEFAULT_INDEX_PATTERNS))
     exclude_patterns: list[str] = field(default_factory=list)
 
 
@@ -83,7 +85,7 @@ _CLI_OVERRIDE_MAP: dict[str, str] = {
     "chunk_size": "chunking.chunk_size",
     "chunk_overlap": "chunking.chunk_overlap",
     "batch_size": "indexing.batch_size",
-    "pattern": "indexing.pattern",
+    "pattern": "indexing.patterns",
     "enable_images": "image_embedding.enabled",
     "clip_model": "image_embedding.vision_model",
     "min_image_size": "image_embedding.min_image_size",
