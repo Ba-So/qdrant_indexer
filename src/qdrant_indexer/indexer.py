@@ -814,70 +814,60 @@ class QdrantIndexer:
             logger.error(f"Failed to load {file_path}: {e}")
             return LoadedFile(file_path=file_path, chunks=[], error=str(e))
 
-    def index_directory(
+    def _discover_files(
         self,
         path: Path,
-        patterns: list[str] | None = None,
-        chunker: Chunker | None = None,
-        batch_size: int = 100,
-        exclude_patterns: list[str] | None = None,
-        on_progress: ProgressCallback | None = None,
-        workers: int = DEFAULT_WORKERS,
-        embedding_batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE,
-    ) -> dict:
-        """Index all matching files in a directory with parallel processing.
+        patterns: list[str],
+        exclude_patterns: list[str] | None,
+    ) -> tuple[list[Path], list[Path]]:
+        """Glob for files matching patterns under path, deduplicate, then apply exclusions.
 
         Args:
-            path: Directory path to index.
-            patterns: Glob patterns for file matching (defaults to common doc types).
-            chunker: Chunker instance (defaults to RecursiveChunker).
-            batch_size: Number of points to upload per batch.
-            exclude_patterns: Additional glob patterns to exclude.
-            on_progress: Optional callback for progress updates.
-            workers: Number of parallel workers for file loading (default: CPU count, max 4).
-            embedding_batch_size: Number of chunks to embed at once (default: 64).
-                Smaller values use less GPU memory.
+            path: Root directory to search.
+            patterns: Glob patterns relative to path (e.g. ``["**/*.md", "**/*.pdf"]``).
+            exclude_patterns: Additional glob patterns whose matches are excluded.
 
         Returns:
-            Summary dict with total_files, total_chunks, failed_files, and skipped_files.
+            Tuple of (included_files, skipped_files).
         """
-        if patterns is None:
-            patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"]
-
-        # Note: chunker=None signals auto-selection per file
-        # (handled in _load_and_chunk_file)
-
-        # Discover files first
-        all_files = []
-        seen = set()
+        all_files: list[Path] = []
+        seen: set[Path] = set()
         for pattern in patterns:
             for f in path.glob(pattern):
                 if f.is_file() and f not in seen:
                     all_files.append(f)
                     seen.add(f)
+        return filter_files(all_files, path, exclude_patterns)
 
-        # Apply exclusion filters
-        files, skipped = filter_files(all_files, path, exclude_patterns)
-        total_files_to_process = len(files)
+    def _load_files_parallel(
+        self,
+        files: list[Path],
+        chunker: Chunker | None,
+        chunk_size: int,
+        overlap: int,
+        workers: int,
+        on_progress: ProgressCallback | None,
+        total_files: int,
+    ) -> tuple[list[LoadedFile], list[str]]:
+        """Load and chunk all files in parallel, routing PDFs to a process pool.
 
-        if skipped:
-            logger.info(f"Skipped {len(skipped)} files due to exclusion patterns")
+        PyMuPDF is not thread-safe, so PDF files are processed via
+        ``ProcessPoolExecutor`` while all other file types use
+        ``ThreadPoolExecutor``.
 
-        patterns_str = ", ".join(patterns)
-        logger.info(
-            f"Found {total_files_to_process} files matching patterns: {patterns_str}"
-        )
+        Args:
+            files: Files to load.
+            chunker: Chunker instance, or None for per-file auto-selection.
+            chunk_size: Chunk size forwarded to auto-selected chunkers.
+            overlap: Overlap forwarded to auto-selected chunkers.
+            workers: Maximum number of parallel workers for each executor.
+            on_progress: Optional progress callback.
+            total_files: Total file count used for progress reporting (may be
+                larger than ``len(files)`` when called after discovery).
 
-        if on_progress:
-            on_progress(
-                "discovery",
-                total_files_to_process,
-                total_files_to_process,
-                f"Found {total_files_to_process} files",
-            )
-
-        # Phase 1: Parallel file loading and chunking
-        # Separate PDF files (need ProcessPoolExecutor) from other files (ThreadPoolExecutor)
+        Returns:
+            Tuple of (loaded_files, failed_file_messages).
+        """
         pdf_files = [f for f in files if f.suffix.lower() in PDF_EXTENSIONS]
         other_files = [f for f in files if f.suffix.lower() not in PDF_EXTENSIONS]
 
@@ -888,18 +878,12 @@ class QdrantIndexer:
             logger.info(f"  {len(other_files)} other files (thread pool)")
 
         if on_progress:
-            on_progress("loading", 0, total_files_to_process, "Loading files...")
+            on_progress("loading", 0, total_files, "Loading files...")
 
-        loaded_files: list[LoadedFile] = []
-        failed_files: list[str] = []
-        files_loaded = 0
-
-        # Get chunker settings for PDF process pool
-        # When chunker is None (auto mode), use defaults and "auto" strategy
+        # Derive chunker parameters for the PDF process pool (must be serialisable)
         if chunker is not None:
-            chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else 1536
-            overlap = chunker.overlap if hasattr(chunker, "overlap") else 200
-            # Determine strategy from chunker class name
+            pdf_chunk_size = chunker.chunk_size if hasattr(chunker, "chunk_size") else chunk_size
+            pdf_overlap = chunker.overlap if hasattr(chunker, "overlap") else overlap
             chunker_strategy = type(chunker).__name__.replace("Chunker", "").lower()
             if chunker_strategy not in (
                 "recursive",
@@ -909,16 +893,21 @@ class QdrantIndexer:
                 "semantic",
                 "code",
             ):
-                chunker_strategy = "recursive"  # fallback
+                chunker_strategy = "recursive"
         else:
-            chunk_size = 1536
-            overlap = 200
+            pdf_chunk_size = chunk_size
+            pdf_overlap = overlap
             chunker_strategy = "auto"
+
+        loaded_files: list[LoadedFile] = []
+        failed_files: list[str] = []
+        files_loaded = 0
 
         # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
         if pdf_files:
             pdf_args = [
-                (str(f), chunk_size, overlap, chunker_strategy) for f in pdf_files
+                (str(f), pdf_chunk_size, pdf_overlap, chunker_strategy)
+                for f in pdf_files
             ]
 
             with ProcessPoolExecutor(max_workers=workers) as executor:
@@ -932,17 +921,14 @@ class QdrantIndexer:
                             on_progress(
                                 "file_error",
                                 files_loaded,
-                                total_files_to_process,
+                                total_files,
                                 f"Failed: {file_path.name}",
                             )
                     else:
-                        # Log chunker used for PDF
                         if result.get("chunker_used"):
                             logger.debug(
                                 f"Used {result['chunker_used']} for {file_path.name}"
                             )
-
-                        # Convert dict chunks back to PreparedChunk objects
                         chunks = [
                             PreparedChunk(
                                 text=c["text"],
@@ -954,21 +940,18 @@ class QdrantIndexer:
                             )
                             for c in result["chunks"]
                         ]
-                        loaded_files.append(
-                            LoadedFile(file_path=file_path, chunks=chunks)
-                        )
+                        loaded_files.append(LoadedFile(file_path=file_path, chunks=chunks))
                         if on_progress:
                             on_progress(
                                 "file_loaded",
                                 files_loaded,
-                                total_files_to_process,
+                                total_files,
                                 f"Loaded {file_path.name}: {len(chunks)} chunks",
                             )
 
         # Process other files with ThreadPoolExecutor
         if other_files:
             with ThreadPoolExecutor(max_workers=workers) as executor:
-                # Submit all file loading tasks
                 future_to_file = {
                     executor.submit(
                         self._load_and_chunk_file, f, chunker, chunk_size, overlap
@@ -976,11 +959,9 @@ class QdrantIndexer:
                     for f in other_files
                 }
 
-                # Collect results as they complete
                 for future in as_completed(future_to_file):
                     file_path = future_to_file[future]
                     files_loaded += 1
-
                     try:
                         result = future.result()
                         if result.error:
@@ -989,7 +970,7 @@ class QdrantIndexer:
                                 on_progress(
                                     "file_error",
                                     files_loaded,
-                                    total_files_to_process,
+                                    total_files,
                                     f"Failed: {file_path.name}",
                                 )
                         else:
@@ -998,31 +979,37 @@ class QdrantIndexer:
                                 on_progress(
                                     "file_loaded",
                                     files_loaded,
-                                    total_files_to_process,
+                                    total_files,
                                     f"Loaded {file_path.name}: {len(result.chunks)} chunks",
                                 )
                     except Exception as e:
                         failed_files.append(f"{file_path}: {e}")
                         logger.error(f"Failed to load {file_path}: {e}")
 
-        # Phase 2: Batch embedding across all files
-        # Collect all chunks for efficient batch embedding
-        all_chunks: list[PreparedChunk] = []
-        for loaded_file in loaded_files:
-            all_chunks.extend(loaded_file.chunks)
+        return loaded_files, failed_files
 
-        if not all_chunks:
-            logger.info("No chunks to index")
-            return {
-                "total_files": 0,
-                "total_chunks": 0,
-                "failed_files": failed_files,
-                "skipped_files": len(skipped),
-            }
+    def _embed_chunks_batched(
+        self,
+        all_chunks: list[PreparedChunk],
+        embedding_batch_size: int,
+        on_progress: ProgressCallback | None,
+    ) -> list:
+        """Generate embeddings for all chunks in fixed-size batches.
 
+        Batching avoids GPU out-of-memory errors when the chunk list is large.
+
+        Args:
+            all_chunks: Chunks whose text should be embedded.
+            embedding_batch_size: Number of chunks to embed per batch.
+            on_progress: Optional progress callback.
+
+        Returns:
+            List of embedding vectors in the same order as ``all_chunks``.
+        """
         total_chunks = len(all_chunks)
         logger.info(
-            f"Generating embeddings for {total_chunks} chunks (batch size: {embedding_batch_size})..."
+            f"Generating embeddings for {total_chunks} chunks "
+            f"(batch size: {embedding_batch_size})..."
         )
 
         if on_progress:
@@ -1030,14 +1017,12 @@ class QdrantIndexer:
                 "embedding", 0, total_chunks, f"Embedding {total_chunks} chunks..."
             )
 
-        # Generate embeddings in batches to avoid GPU OOM
         chunk_texts = [c.text for c in all_chunks]
         embeddings: list = []
 
         for i in range(0, len(chunk_texts), embedding_batch_size):
             batch = chunk_texts[i : i + embedding_batch_size]
-            batch_embeddings = list(self.embeddings.embed(batch))
-            embeddings.extend(batch_embeddings)
+            embeddings.extend(list(self.embeddings.embed(batch)))
 
             if on_progress:
                 completed = min(i + embedding_batch_size, total_chunks)
@@ -1051,8 +1036,29 @@ class QdrantIndexer:
         if on_progress:
             on_progress("embedding", total_chunks, total_chunks, "Embeddings complete")
 
-        # Phase 3: Build points
+        return embeddings
+
+    def _build_and_upload_points(
+        self,
+        all_chunks: list[PreparedChunk],
+        embeddings: list,
+        batch_size: int,
+        on_progress: ProgressCallback | None,
+    ) -> int:
+        """Build PointStruct objects and upload them to Qdrant in batches.
+
+        Args:
+            all_chunks: Chunks paired positionally with ``embeddings``.
+            embeddings: Embedding vectors, one per chunk.
+            batch_size: Number of points per upsert call.
+            on_progress: Optional progress callback.
+
+        Returns:
+            Total number of points uploaded.
+        """
+        total_chunks = len(all_chunks)
         logger.info("Preparing points for upload...")
+
         if on_progress:
             on_progress("preparing", 0, total_chunks, "Preparing points...")
 
@@ -1086,7 +1092,6 @@ class QdrantIndexer:
                 )
             )
 
-            # Update progress every 100 points
             if on_progress and (i + 1) % 100 == 0:
                 on_progress(
                     "preparing",
@@ -1098,7 +1103,6 @@ class QdrantIndexer:
         if on_progress:
             on_progress("preparing", total_chunks, total_chunks, "Points prepared")
 
-        # Phase 4: Upload in batches
         logger.info(f"Uploading to Qdrant in batches of {batch_size}...")
         if on_progress:
             on_progress("uploading", 0, total_chunks, "Uploading to Qdrant...")
@@ -1122,6 +1126,92 @@ class QdrantIndexer:
 
         if on_progress:
             on_progress("uploading", total_chunks, total_chunks, "Upload complete")
+
+        return uploaded_count
+
+    def index_directory(
+        self,
+        path: Path,
+        patterns: list[str] | None = None,
+        chunker: Chunker | None = None,
+        batch_size: int = 100,
+        exclude_patterns: list[str] | None = None,
+        on_progress: ProgressCallback | None = None,
+        workers: int = DEFAULT_WORKERS,
+        embedding_batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE,
+    ) -> dict:
+        """Index all matching files in a directory with parallel processing.
+
+        Args:
+            path: Directory path to index.
+            patterns: Glob patterns for file matching (defaults to common doc types).
+            chunker: Chunker instance (defaults to RecursiveChunker).
+            batch_size: Number of points to upload per batch.
+            exclude_patterns: Additional glob patterns to exclude.
+            on_progress: Optional callback for progress updates.
+            workers: Number of parallel workers for file loading (default: CPU count, max 4).
+            embedding_batch_size: Number of chunks to embed at once (default: 64).
+                Smaller values use less GPU memory.
+
+        Returns:
+            Summary dict with total_files, total_chunks, failed_files, and skipped_files.
+        """
+        if patterns is None:
+            patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst"]
+
+        # Note: chunker=None signals auto-selection per file
+        # (handled in _load_and_chunk_file)
+
+        # Phase 1: File discovery
+        files, skipped = self._discover_files(path, patterns, exclude_patterns)
+        total_files_to_process = len(files)
+
+        if skipped:
+            logger.info(f"Skipped {len(skipped)} files due to exclusion patterns")
+
+        patterns_str = ", ".join(patterns)
+        logger.info(
+            f"Found {total_files_to_process} files matching patterns: {patterns_str}"
+        )
+
+        if on_progress:
+            on_progress(
+                "discovery",
+                total_files_to_process,
+                total_files_to_process,
+                f"Found {total_files_to_process} files",
+            )
+
+        # Phase 2: Parallel loading and chunking
+        loaded_files, failed_files = self._load_files_parallel(
+            files=files,
+            chunker=chunker,
+            chunk_size=1536,
+            overlap=200,
+            workers=workers,
+            on_progress=on_progress,
+            total_files=total_files_to_process,
+        )
+
+        # Phase 3: Batch embedding
+        all_chunks: list[PreparedChunk] = []
+        for loaded_file in loaded_files:
+            all_chunks.extend(loaded_file.chunks)
+
+        if not all_chunks:
+            logger.info("No chunks to index")
+            return {
+                "total_files": 0,
+                "total_chunks": 0,
+                "failed_files": failed_files,
+                "skipped_files": len(skipped),
+            }
+
+        embeddings = self._embed_chunks_batched(all_chunks, embedding_batch_size, on_progress)
+
+        # Phase 4: Build points and upload
+        total_chunks = len(all_chunks)
+        self._build_and_upload_points(all_chunks, embeddings, batch_size, on_progress)
 
         logger.info(
             f"Indexing complete: {len(loaded_files)} files, {total_chunks} chunks"
@@ -1186,16 +1276,7 @@ class QdrantIndexer:
                 "**/*.php",
             ]
 
-        all_files = []
-        seen = set()
-        for pattern in patterns:
-            for f in path.glob(pattern):
-                if f.is_file() and f not in seen:
-                    all_files.append(f)
-                    seen.add(f)
-
-        # Apply exclusion filters
-        files, _ = filter_files(all_files, path, exclude_patterns)
+        files, _ = self._discover_files(path, patterns, exclude_patterns)
 
         # Report discovery complete
         if on_progress:

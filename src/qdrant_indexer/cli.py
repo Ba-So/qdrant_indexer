@@ -34,6 +34,109 @@ from qdrant_indexer.indexer import (
 app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collections")
 console = Console()
 
+
+def _make_sync_progress_callback(progress, task):
+    """Create a progress callback for sync_directory."""
+
+    def on_sync_progress(event: str, current: int, total: int, message: str) -> None:
+        if event == "sync_discovery":
+            progress.update(task, description=f"Found {total} files", total=total, completed=0)
+        elif event == "sync_checking":
+            progress.update(task, description=f"Checking: {message}", completed=current)
+        elif event == "sync_indexing":
+            progress.update(task, description=f"Indexing: {message}", total=total, completed=current)
+        elif event == "sync_deleting":
+            progress.update(task, description=f"Removing: {message}", total=total, completed=current)
+
+    return on_sync_progress
+
+
+def _make_index_progress_callback(progress, task):
+    """Create a progress callback for index_directory."""
+
+    def on_progress(event: str, current: int, total: int, message: str) -> None:
+        if event == "discovery":
+            progress.update(task, description=f"Found {total} files", total=total, completed=0)
+        elif event == "loading":
+            progress.update(task, description="Loading files...", total=total, completed=current)
+        elif event == "file_loaded":
+            progress.update(
+                task,
+                description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}",
+                completed=current,
+            )
+        elif event == "file_error":
+            progress.update(task, completed=current)
+        elif event == "embedding":
+            if current == 0:
+                progress.update(task, description=f"Embedding {total} chunks...", total=total, completed=0)
+            else:
+                progress.update(task, description=f"Embedding ({current}/{total})", completed=current)
+        elif event == "preparing":
+            if current == 0:
+                progress.update(task, description="Preparing points...", total=total, completed=0)
+            else:
+                progress.update(task, description=f"Preparing ({current}/{total})", completed=current)
+        elif event == "uploading":
+            if current == 0:
+                progress.update(task, description="Uploading to Qdrant...", total=total, completed=0)
+            else:
+                progress.update(task, description=f"Uploading ({current}/{total})", completed=current)
+
+    return on_progress
+
+
+def _display_index_summary(
+    console: Console,
+    result,
+    incremental: bool,
+    gpu: bool,
+    indexer,
+    workers: int,
+    elapsed: float,
+) -> None:
+    """Display indexing results summary."""
+    summary = Table.grid(padding=(0, 2))
+    summary.add_column()
+    summary.add_column()
+
+    if incremental:
+        summary.add_row("Files added:", f"[green]{result.added}[/green]")
+        summary.add_row("Files updated:", f"[yellow]{result.updated}[/yellow]")
+        summary.add_row("Files deleted:", f"[red]{result.deleted}[/red]")
+        summary.add_row("Files unchanged:", f"[dim]{result.unchanged}[/dim]")
+        if result.failed:
+            summary.add_row("Files failed:", f"[red]{len(result.failed)}[/red]")
+    else:
+        summary.add_row("Files indexed:", f"[cyan]{result['total_files']}[/cyan]")
+        summary.add_row("Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]")
+        if result["skipped_files"]:
+            summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
+        summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
+        if result["failed_files"]:
+            summary.add_row("Failed files:", f"[red]{len(result['failed_files'])}[/red]")
+
+    if gpu:
+        gpu_status = (
+            "[green]Yes[/green]"
+            if indexer.use_cuda and is_cuda_available()
+            else "[yellow]No (fallback)[/yellow]"
+        )
+        summary.add_row("GPU:", gpu_status)
+    summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
+
+    console.print(Panel(summary, title="Indexing Complete", border_style="green"))
+
+    if incremental and result.failed:
+        console.print("\n[yellow]Failed files:[/yellow]")
+        for failed in result.failed:
+            console.print(f"  [red]•[/red] {failed}")
+    elif not incremental and result["failed_files"]:
+        console.print("\n[yellow]Failed files:[/yellow]")
+        for failed in result["failed_files"]:
+            console.print(f"  [red]•[/red] {failed}")
+
+
 # Global verbosity level
 _verbosity = 0
 _quiet = False
@@ -329,37 +432,6 @@ def index(
                 disable=quiet,
             ) as progress:
                 task = progress.add_task("Discovering files...", total=None)
-
-                def on_sync_progress(
-                    event: str, current: int, total: int, message: str
-                ) -> None:
-                    """Handle progress updates from sync_directory."""
-                    if event == "sync_discovery":
-                        progress.update(
-                            task,
-                            description=f"Found {total} files",
-                            total=total,
-                            completed=0,
-                        )
-                    elif event == "sync_checking":
-                        progress.update(
-                            task, description=f"Checking: {message}", completed=current
-                        )
-                    elif event == "sync_indexing":
-                        progress.update(
-                            task,
-                            description=f"Indexing: {message}",
-                            total=total,
-                            completed=current,
-                        )
-                    elif event == "sync_deleting":
-                        progress.update(
-                            task,
-                            description=f"Removing: {message}",
-                            total=total,
-                            completed=current,
-                        )
-
                 result = indexer.sync_directory(
                     path=path,
                     patterns=pattern,
@@ -368,11 +440,10 @@ def index(
                     exclude_patterns=exclude_patterns if exclude_patterns else None,
                     state_file=state_file,
                     force=False,
-                    on_progress=on_sync_progress,
+                    on_progress=_make_sync_progress_callback(progress, task),
                     chunk_size=chunk_size,
                     overlap=chunk_overlap,
                 )
-
                 progress.update(task, description="Complete")
         else:
             # Full mode: use index_directory
@@ -383,7 +454,6 @@ def index(
                 if images:
                     console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
 
-            # Progress bar with phases
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -394,148 +464,22 @@ def index(
                 disable=quiet,
             ) as progress:
                 task = progress.add_task("Discovering files...", total=None)
-
-                def on_progress(
-                    event: str, current: int, total: int, message: str
-                ) -> None:
-                    """Handle progress updates from indexer."""
-                    if event == "discovery":
-                        progress.update(
-                            task,
-                            description=f"Found {total} files",
-                            total=total,
-                            completed=0,
-                        )
-                    elif event == "loading":
-                        progress.update(
-                            task,
-                            description="Loading files...",
-                            total=total,
-                            completed=current,
-                        )
-                    elif event == "file_loaded":
-                        progress.update(
-                            task,
-                            description=f"Loading: {message.split(':')[0].replace('Loaded ', '')}",
-                            completed=current,
-                        )
-                    elif event == "file_error":
-                        progress.update(task, completed=current)
-                    elif event == "embedding":
-                        if current == 0:
-                            progress.update(
-                                task,
-                                description=f"Embedding {total} chunks...",
-                                total=total,
-                                completed=0,
-                            )
-                        else:
-                            progress.update(
-                                task,
-                                description=f"Embedding ({current}/{total})",
-                                completed=current,
-                            )
-                    elif event == "preparing":
-                        if current == 0:
-                            progress.update(
-                                task,
-                                description="Preparing points...",
-                                total=total,
-                                completed=0,
-                            )
-                        else:
-                            progress.update(
-                                task,
-                                description=f"Preparing ({current}/{total})",
-                                completed=current,
-                            )
-                    elif event == "uploading":
-                        if current == 0:
-                            progress.update(
-                                task,
-                                description="Uploading to Qdrant...",
-                                total=total,
-                                completed=0,
-                            )
-                        else:
-                            progress.update(
-                                task,
-                                description=f"Uploading ({current}/{total})",
-                                completed=current,
-                            )
-
-                # Run parallel indexing
                 result = indexer.index_directory(
                     path=path,
                     patterns=pattern,
                     chunker=chunker,
                     batch_size=batch_size,
                     exclude_patterns=exclude_patterns if exclude_patterns else None,
-                    on_progress=on_progress,
+                    on_progress=_make_index_progress_callback(progress, task),
                     workers=workers,
                     embedding_batch_size=embedding_batch_size,
                 )
-
-                progress.update(
-                    task, description="Complete", completed=result["total_chunks"]
-                )
+                progress.update(task, description="Complete", completed=result["total_chunks"])
 
         elapsed = time.time() - start_time
 
-        # Display summary
         if not quiet:
-            summary = Table.grid(padding=(0, 2))
-            summary.add_column()
-            summary.add_column()
-
-            if incremental:
-                # Display sync-specific summary
-                summary.add_row("Files added:", f"[green]{result.added}[/green]")
-                summary.add_row("Files updated:", f"[yellow]{result.updated}[/yellow]")
-                summary.add_row("Files deleted:", f"[red]{result.deleted}[/red]")
-                summary.add_row("Files unchanged:", f"[dim]{result.unchanged}[/dim]")
-                if result.failed:
-                    summary.add_row("Files failed:", f"[red]{len(result.failed)}[/red]")
-            else:
-                # Display full index summary
-                summary.add_row(
-                    "Files indexed:", f"[cyan]{result['total_files']}[/cyan]"
-                )
-                summary.add_row(
-                    "Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]"
-                )
-                if result["skipped_files"]:
-                    summary.add_row(
-                        "Files skipped:", f"[dim]{result['skipped_files']}[/dim]"
-                    )
-                summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
-                if result["failed_files"]:
-                    summary.add_row(
-                        "Failed files:", f"[red]{len(result['failed_files'])}[/red]"
-                    )
-
-            if gpu:
-                gpu_status = (
-                    "[green]Yes[/green]"
-                    if indexer.use_cuda and is_cuda_available()
-                    else "[yellow]No (fallback)[/yellow]"
-                )
-                summary.add_row("GPU:", gpu_status)
-            summary.add_row("Time elapsed:", f"[cyan]{elapsed:.2f}s[/cyan]")
-
-            console.print(
-                Panel(summary, title="Indexing Complete", border_style="green")
-            )
-
-            # Display failed files
-            if incremental and result.failed:
-                console.print("\n[yellow]Failed files:[/yellow]")
-                for failed in result.failed:
-                    console.print(f"  [red]•[/red] {failed}")
-            elif not incremental and result["failed_files"]:
-                console.print("\n[yellow]Failed files:[/yellow]")
-                for failed in result["failed_files"]:
-                    console.print(f"  [red]•[/red] {failed}")
+            _display_index_summary(console, result, incremental, gpu, indexer, workers, elapsed)
 
     except Exception as e:
         display_error(str(e))
@@ -750,8 +694,9 @@ def clean(
             failed = []
             for file_path_str, file_state in state.files.items():
                 try:
-                    indexer.delete_points_by_ids(file_state.chunk_ids)
-                    total_deleted += len(file_state.chunk_ids)
+                    all_ids = file_state.chunk_ids + file_state.image_ids
+                    indexer.delete_points_by_ids(all_ids)
+                    total_deleted += len(all_ids)
                 except Exception as e:
                     failed.append(f"{file_path_str}: {e}")
                     if not quiet:
@@ -795,9 +740,10 @@ def clean(
                 file_state = state.files.get(file_path_str)
                 if file_state:
                     try:
-                        indexer.delete_points_by_ids(file_state.chunk_ids)
+                        all_ids = file_state.chunk_ids + file_state.image_ids
+                        indexer.delete_points_by_ids(all_ids)
                         state.remove_file(Path(file_path_str))
-                        total_deleted += len(file_state.chunk_ids)
+                        total_deleted += len(all_ids)
                     except Exception as e:
                         failed.append(f"{file_path_str}: {e}")
                         if not quiet:

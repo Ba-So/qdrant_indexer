@@ -42,6 +42,8 @@ class IndexState:
                     "chunk_count": state.chunk_count,
                     "chunk_ids": state.chunk_ids,
                     "mtime": state.mtime,
+                    "image_count": state.image_count,
+                    "image_ids": state.image_ids,
                 }
                 for path, state in self.files.items()
             }
