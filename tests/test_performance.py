@@ -173,6 +173,19 @@ def generate_php_file(num_lines: int) -> str:
 class TestCodeIndexingPerformance:
     """Performance tests for code indexing."""
 
+    @pytest.fixture(autouse=True)
+    def patch_loaders(self, monkeypatch):
+        """Temporarily register code loaders for the duration of each test.
+
+        Uses monkeypatch so the global LOADERS dict is restored automatically
+        after every test, preventing cross-test contamination.
+        """
+        from qdrant_indexer.code_loaders import PHPCodeLoader, PythonCodeLoader
+        from qdrant_indexer.loaders import LOADERS
+
+        monkeypatch.setitem(LOADERS, ".py", PythonCodeLoader)
+        monkeypatch.setitem(LOADERS, ".php", PHPCodeLoader)
+
     def test_index_10k_loc_python(
         self,
         tmp_path: Path,
@@ -192,11 +205,6 @@ class TestCodeIndexingPerformance:
             code = generate_python_file(500)
             (code_dir / f"module_{i}.py").write_text(code)
 
-        # Register Python code loader
-        from qdrant_indexer.code_loaders import PythonCodeLoader
-        from qdrant_indexer.loaders import LOADERS
-        LOADERS[".py"] = PythonCodeLoader
-
         indexer = QdrantIndexer(
             qdrant_url=QDRANT_URL,
             collection_name=perf_test_collection,
@@ -210,7 +218,7 @@ class TestCodeIndexingPerformance:
         total_files = 0
 
         for file in code_dir.glob("*.py"):
-            chunks, _ = indexer.index_file(file, chunker)
+            chunks, _, _, _ = indexer.index_file(file, chunker)
             total_chunks += chunks
             total_files += 1
 
@@ -250,11 +258,6 @@ class TestCodeIndexingPerformance:
             code = generate_php_file(500)
             (code_dir / f"module_{i}.php").write_text(code)
 
-        # Register PHP code loader
-        from qdrant_indexer.code_loaders import PHPCodeLoader
-        from qdrant_indexer.loaders import LOADERS
-        LOADERS[".php"] = PHPCodeLoader
-
         indexer = QdrantIndexer(
             qdrant_url=QDRANT_URL,
             collection_name=perf_test_collection,
@@ -268,7 +271,7 @@ class TestCodeIndexingPerformance:
         total_files = 0
 
         for file in code_dir.glob("*.php"):
-            chunks, _ = indexer.index_file(file, chunker)
+            chunks, _, _, _ = indexer.index_file(file, chunker)
             total_chunks += chunks
             total_files += 1
 
