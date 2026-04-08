@@ -1,6 +1,7 @@
 """PHP source code loader using tree-sitter parsing."""
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import tree_sitter_php
@@ -40,7 +41,7 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         symbols: list[CodeSymbol] = []
 
         # Walk the tree to find symbols
-        self._walk_node(tree.root_node, content_bytes, content, symbols, None)
+        self._walk_node(tree.root_node, content_bytes, symbols, None)
 
         return symbols
 
@@ -48,7 +49,6 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         self,
         node,
         content_bytes: bytes,
-        content: str,
         symbols: list[CodeSymbol],
         parent_class: str | None,
     ) -> None:
@@ -57,75 +57,75 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         Args:
             node: Tree-sitter node to process.
             content_bytes: Source code as bytes.
-            content: Source code as string.
             symbols: List to append extracted symbols to.
             parent_class: Name of parent class/interface/trait if inside one.
         """
         if node.type == "function_definition":
-            symbols.append(self._extract_function(node, content_bytes, content))
+            symbols.append(self._extract_function(node, content_bytes))
 
         elif node.type == "class_declaration":
-            class_symbol = self._extract_class(node, content_bytes, content)
-            symbols.append(class_symbol)
-            # Process methods inside class
-            decl_list = node.child_by_field_name("body")
-            if decl_list:
-                for child in decl_list.children:
-                    if child.type == "method_declaration":
-                        symbols.append(
-                            self._extract_method(
-                                child, content_bytes, content, class_symbol.name
-                            )
-                        )
+            symbols.extend(
+                self._extract_container_with_methods(
+                    node, content_bytes, self._extract_class
+                )
+            )
 
         elif node.type == "interface_declaration":
-            iface_symbol = self._extract_interface_trait(
-                node, content_bytes, content, "interface"
+            symbols.extend(
+                self._extract_container_with_methods(
+                    node,
+                    content_bytes,
+                    lambda n, cb: self._extract_interface_trait(n, cb, "interface"),
+                )
             )
-            symbols.append(iface_symbol)
-            # Process method signatures inside interface
-            decl_list = node.child_by_field_name("body")
-            if decl_list:
-                for child in decl_list.children:
-                    if child.type == "method_declaration":
-                        symbols.append(
-                            self._extract_method(
-                                child, content_bytes, content, iface_symbol.name
-                            )
-                        )
 
         elif node.type == "trait_declaration":
-            trait_symbol = self._extract_interface_trait(
-                node, content_bytes, content, "trait"
+            symbols.extend(
+                self._extract_container_with_methods(
+                    node,
+                    content_bytes,
+                    lambda n, cb: self._extract_interface_trait(n, cb, "trait"),
+                )
             )
-            symbols.append(trait_symbol)
-            # Process methods inside trait
-            decl_list = node.child_by_field_name("body")
-            if decl_list:
-                for child in decl_list.children:
-                    if child.type == "method_declaration":
-                        symbols.append(
-                            self._extract_method(
-                                child, content_bytes, content, trait_symbol.name
-                            )
-                        )
 
         elif node.type == "const_declaration" and parent_class is None:
             # Module-level constants only
-            symbols.append(self._extract_constant(node, content_bytes, content))
+            symbols.append(self._extract_constant(node, content_bytes))
 
         else:
-            # Recurse into children (but not into class/interface/trait bodies
-            # which we handle specially above)
-            if node.type not in (
-                "class_declaration",
-                "interface_declaration",
-                "trait_declaration",
-            ):
-                for child in node.children:
-                    self._walk_node(
-                        child, content_bytes, content, symbols, parent_class
+            for child in node.children:
+                self._walk_node(child, content_bytes, symbols, parent_class)
+
+    def _extract_container_with_methods(
+        self,
+        node,
+        content_bytes: bytes,
+        extract_container: Callable,
+    ) -> list[CodeSymbol]:
+        """Extract a container symbol (class/interface/trait) and its methods.
+
+        Args:
+            node: The container AST node.
+            content_bytes: Source code as bytes.
+            extract_container: Callable(node, content_bytes) -> CodeSymbol that
+                produces the container symbol.
+
+        Returns:
+            List with the container symbol followed by all method symbols found
+            in its body.
+        """
+        container = extract_container(node, content_bytes)
+        result: list[CodeSymbol] = [container]
+
+        body = node.child_by_field_name("body")
+        if body:
+            for child in body.children:
+                if child.type == "method_declaration":
+                    result.append(
+                        self._extract_method(child, content_bytes, container.name)
                     )
+
+        return result
 
     def _extract_phpdoc(self, node, content_bytes: bytes) -> str | None:
         """Extract PHPDoc comment above a node.
@@ -151,15 +151,12 @@ class PHPCodeLoader(TreeSitterCodeLoader):
             prev = prev.prev_sibling
         return None
 
-    def _extract_function(
-        self, node, content_bytes: bytes, content: str
-    ) -> CodeSymbol:
+    def _extract_function(self, node, content_bytes: bytes) -> CodeSymbol:
         """Extract function symbol.
 
         Args:
             node: Function definition node.
             content_bytes: Source code as bytes.
-            content: Source code as string.
 
         Returns:
             CodeSymbol representing the function.
@@ -193,13 +190,12 @@ class PHPCodeLoader(TreeSitterCodeLoader):
             line_end=node.end_point[0] + 1,
         )
 
-    def _extract_class(self, node, content_bytes: bytes, content: str) -> CodeSymbol:
+    def _extract_class(self, node, content_bytes: bytes) -> CodeSymbol:
         """Extract class symbol.
 
         Args:
             node: Class declaration node.
             content_bytes: Source code as bytes.
-            content: Source code as string.
 
         Returns:
             CodeSymbol representing the class.
@@ -232,14 +228,13 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         )
 
     def _extract_method(
-        self, node, content_bytes: bytes, content: str, parent_class: str
+        self, node, content_bytes: bytes, parent_class: str
     ) -> CodeSymbol:
         """Extract method symbol.
 
         Args:
             node: Method declaration node.
             content_bytes: Source code as bytes.
-            content: Source code as string.
             parent_class: Name of containing class/interface/trait.
 
         Returns:
@@ -288,15 +283,12 @@ class PHPCodeLoader(TreeSitterCodeLoader):
             visibility=visibility,
         )
 
-    def _extract_constant(
-        self, node, content_bytes: bytes, content: str
-    ) -> CodeSymbol:
+    def _extract_constant(self, node, content_bytes: bytes) -> CodeSymbol:
         """Extract constant symbol.
 
         Args:
             node: Const declaration node.
             content_bytes: Source code as bytes.
-            content: Source code as string.
 
         Returns:
             CodeSymbol representing the constant.
@@ -325,14 +317,13 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         )
 
     def _extract_interface_trait(
-        self, node, content_bytes: bytes, content: str, symbol_type: str
+        self, node, content_bytes: bytes, symbol_type: str
     ) -> CodeSymbol:
         """Extract interface or trait symbol.
 
         Args:
             node: Interface or trait declaration node.
             content_bytes: Source code as bytes.
-            content: Source code as string.
             symbol_type: Either 'interface' or 'trait'.
 
         Returns:
