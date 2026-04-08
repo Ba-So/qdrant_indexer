@@ -3,6 +3,7 @@
 import logging
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
@@ -259,6 +260,17 @@ def merge_small_chunks(
     return result
 
 
+@dataclass
+class MarkdownSection:
+    """A single section parsed from a markdown document."""
+
+    level: int
+    title: str
+    content: str
+    start_pos: int
+    end_pos: int
+
+
 class MarkdownChunker(_WithFallback, Chunker):
     """Markdown-aware chunker that splits on header boundaries.
 
@@ -335,21 +347,21 @@ class MarkdownChunker(_WithFallback, Chunker):
                 return True
         return False
 
-    def _parse_sections(self, text: str) -> list[dict[str, int | str]]:
+    def _parse_sections(self, text: str) -> list[MarkdownSection]:
         """Parse document into sections with headers.
 
         Args:
             text: The markdown text (without frontmatter).
 
         Returns:
-            List of section dicts with keys: level, title, content, start_pos, end_pos.
+            List of MarkdownSection objects with level, title, content, start_pos, end_pos.
         """
         if not text.strip():
             return []
 
         code_blocks = self._find_code_blocks(text)
         header_pattern = r"^(#{1,6})\s+(.+)$"
-        sections: list[dict[str, int | str]] = []
+        sections: list[MarkdownSection] = []
 
         # Find all headers that are not inside code blocks
         header_matches = []
@@ -360,13 +372,13 @@ class MarkdownChunker(_WithFallback, Chunker):
         if not header_matches:
             # No headers found, return entire text as level 0
             return [
-                {
-                    "level": 0,
-                    "title": "",
-                    "content": text,
-                    "start_pos": 0,
-                    "end_pos": len(text),
-                }
+                MarkdownSection(
+                    level=0,
+                    title="",
+                    content=text,
+                    start_pos=0,
+                    end_pos=len(text),
+                )
             ]
 
         # Handle content before first header
@@ -375,13 +387,13 @@ class MarkdownChunker(_WithFallback, Chunker):
             pre_content = text[:first_header_pos].strip()
             if pre_content:
                 sections.append(
-                    {
-                        "level": 0,
-                        "title": "",
-                        "content": pre_content,
-                        "start_pos": 0,
-                        "end_pos": first_header_pos,
-                    }
+                    MarkdownSection(
+                        level=0,
+                        title="",
+                        content=pre_content,
+                        start_pos=0,
+                        end_pos=first_header_pos,
+                    )
                 )
 
         # Process each header
@@ -398,19 +410,19 @@ class MarkdownChunker(_WithFallback, Chunker):
 
             content = text[start_pos:end_pos].strip()
             sections.append(
-                {
-                    "level": level,
-                    "title": title,
-                    "content": content,
-                    "start_pos": start_pos,
-                    "end_pos": end_pos,
-                }
+                MarkdownSection(
+                    level=level,
+                    title=title,
+                    content=content,
+                    start_pos=start_pos,
+                    end_pos=end_pos,
+                )
             )
 
         return sections
 
     def _build_header_context(
-        self, sections: list[dict[str, int | str]], current_idx: int
+        self, sections: list[MarkdownSection], current_idx: int
     ) -> str:
         """Build parent header breadcrumb for context.
 
@@ -424,23 +436,22 @@ class MarkdownChunker(_WithFallback, Chunker):
         if current_idx < 0 or current_idx >= len(sections):
             return ""
 
-        current_level = sections[current_idx]["level"]
+        current_level = sections[current_idx].level
         if current_level == 0:
             return ""
 
         # Collect parent headers
         parents = []
-        target_level = int(current_level) - 1
+        target_level = current_level - 1
 
         for i in range(current_idx - 1, -1, -1):
             section = sections[i]
-            level = section["level"]
-            if level == 0:
+            if section.level == 0:
                 continue
-            if int(level) <= target_level:
-                header_marker = "#" * int(level)
-                parents.append(f"{header_marker} {section['title']}")
-                target_level = int(level) - 1
+            if section.level <= target_level:
+                header_marker = "#" * section.level
+                parents.append(f"{header_marker} {section.title}")
+                target_level = section.level - 1
                 if target_level < 1:
                     break
 
@@ -466,7 +477,7 @@ class MarkdownChunker(_WithFallback, Chunker):
         sections = self._parse_sections(remaining)
 
         # No headers? Fall back to RecursiveChunker
-        if not sections or all(s["level"] == 0 for s in sections):
+        if not sections or all(s.level == 0 for s in sections):
             return self._fallback_chunker.chunk(text)
 
         chunks: list[str] = []
@@ -480,7 +491,7 @@ class MarkdownChunker(_WithFallback, Chunker):
 
         # Process each section
         for i, section in enumerate(merged_sections):
-            content = str(section["content"])
+            content = section.content
             if not content.strip():
                 continue
 
@@ -502,8 +513,8 @@ class MarkdownChunker(_WithFallback, Chunker):
         return chunks
 
     def _merge_small_sections(
-        self, sections: list[dict[str, int | str]]
-    ) -> list[dict[str, int | str]]:
+        self, sections: list[MarkdownSection]
+    ) -> list[MarkdownSection]:
         """Merge consecutive small sections.
 
         Args:
@@ -515,29 +526,38 @@ class MarkdownChunker(_WithFallback, Chunker):
         if not sections:
             return []
 
-        merged: list[dict[str, int | str]] = []
-        current: dict[str, int | str] | None = None
+        merged: list[MarkdownSection] = []
+        current: MarkdownSection | None = None
 
         for section in sections:
-            content = str(section["content"])
-
             if current is None:
-                current = dict(section)
+                # Work on a copy so we never mutate the caller's list
+                current = MarkdownSection(
+                    level=section.level,
+                    title=section.title,
+                    content=section.content,
+                    start_pos=section.start_pos,
+                    end_pos=section.end_pos,
+                )
                 continue
 
-            current_content = str(current["content"])
-
             # If current section is small, try to merge
-            if len(current_content) < self.min_section_size:
-                merged_content = current_content + "\n\n" + content
+            if len(current.content) < self.min_section_size:
+                merged_content = current.content + "\n\n" + section.content
                 if len(merged_content) <= self.chunk_size:
-                    current["content"] = merged_content
-                    current["end_pos"] = section["end_pos"]
+                    current.content = merged_content
+                    current.end_pos = section.end_pos
                     continue
 
             # Can't merge, save current and start new
             merged.append(current)
-            current = dict(section)
+            current = MarkdownSection(
+                level=section.level,
+                title=section.title,
+                content=section.content,
+                start_pos=section.start_pos,
+                end_pos=section.end_pos,
+            )
 
         if current is not None:
             merged.append(current)
