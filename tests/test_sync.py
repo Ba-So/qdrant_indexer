@@ -7,28 +7,13 @@ import pytest
 
 from qdrant_indexer.chunkers import RecursiveChunker
 from qdrant_indexer.indexer import QdrantIndexer
+from tests.conftest import QDRANT_URL, qdrant_available
 
-# Use localhost for integration tests
-QDRANT_URL = "http://localhost:6333"
-
-
-@pytest.fixture
-def test_collection_name():
-    """Generate unique collection name for each test."""
-    import uuid
-    return f"test-sync-{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture
-def cleanup_collection(test_collection_name):
-    """Cleanup collection after test."""
-    yield
-    from qdrant_client import QdrantClient
-    client = QdrantClient(url=QDRANT_URL)
-    try:
-        client.delete_collection(test_collection_name)
-    except Exception:
-        pass
+# Skip all tests in this module if Qdrant is not available
+pytestmark = pytest.mark.skipif(
+    not qdrant_available(),
+    reason="Qdrant not available at localhost:6333. Start with: docker compose up -d",
+)
 
 
 class TestSyncDirectoryNewFiles:

@@ -1,11 +1,100 @@
 """Pytest fixtures for qdrant_indexer tests."""
 
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from qdrant_indexer.models import Document
+
+# ---------------------------------------------------------------------------
+# Shared Qdrant connectivity constants and helpers (Issues #14)
+# ---------------------------------------------------------------------------
+
+QDRANT_URL = "http://localhost:6333"
+
+
+def qdrant_available() -> bool:
+    """Return True if a Qdrant instance is reachable at QDRANT_URL."""
+    try:
+        from qdrant_client import QdrantClient
+
+        QdrantClient(url=QDRANT_URL, timeout=2).get_collections()
+        return True
+    except Exception:
+        return False
+
+
+@pytest.fixture
+def test_collection_name() -> str:
+    """Generate a unique collection name for test isolation."""
+    return f"test_integration_{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def qdrant_client():
+    """Return a QdrantClient connected to the local test instance."""
+    from qdrant_client import QdrantClient
+
+    return QdrantClient(url=QDRANT_URL)
+
+
+@pytest.fixture
+def cleanup_collection(qdrant_client, test_collection_name: str):
+    """Delete the test collection after each test, ignoring errors."""
+    yield test_collection_name
+    try:
+        qdrant_client.delete_collection(test_collection_name)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Mock fixture for QdrantIndexer unit tests (Issue #13)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_indexer_env():
+    """Patch the three heavyweight dependencies of QdrantIndexer.
+
+    Yields a SimpleNamespace with:
+        - mock_model_info  : the patched get_model_info callable
+        - mock_client_cls  : the patched QdrantClient class
+        - mock_client      : the MagicMock instance returned by QdrantClient()
+        - mock_embed_cls   : the patched TextEmbedding class
+        - mock_embed       : the MagicMock instance returned by TextEmbedding()
+
+    Default behaviours (tests may override before constructing QdrantIndexer):
+        - mock_model_info  → {"dim": 384, "model": "test-model"}
+        - mock_client.collection_exists → False
+        - mock_embed.embed             → [[0.1] * 384]
+    """
+    with (
+        patch("qdrant_indexer.indexer.get_model_info") as mock_model_info,
+        patch("qdrant_indexer.indexer.QdrantClient") as mock_client_cls,
+        patch("qdrant_indexer.indexer.TextEmbedding") as mock_embed_cls,
+    ):
+        mock_model_info.return_value = {"dim": 384, "model": "test-model"}
+
+        mock_client = MagicMock()
+        mock_client.collection_exists.return_value = False
+        mock_client_cls.return_value = mock_client
+
+        mock_embed = MagicMock()
+        mock_embed.embed.return_value = [[0.1] * 384]
+        mock_embed_cls.return_value = mock_embed
+
+        yield SimpleNamespace(
+            mock_model_info=mock_model_info,
+            mock_client_cls=mock_client_cls,
+            mock_client=mock_client,
+            mock_embed_cls=mock_embed_cls,
+            mock_embed=mock_embed,
+        )
 
 
 @pytest.fixture

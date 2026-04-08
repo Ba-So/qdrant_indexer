@@ -15,20 +15,7 @@ from qdrant_client import QdrantClient
 
 from qdrant_indexer.chunkers import RecursiveChunker
 from qdrant_indexer.indexer import QdrantIndexer
-
-# Default Qdrant URL for tests
-QDRANT_URL = "http://localhost:6333"
-
-
-def qdrant_available() -> bool:
-    """Check if Qdrant is available at the default URL."""
-    try:
-        client = QdrantClient(url=QDRANT_URL, timeout=2)
-        client.get_collections()
-        return True
-    except Exception:
-        return False
-
+from tests.conftest import QDRANT_URL, qdrant_available
 
 # Skip all tests in this module if Qdrant is not available
 pytestmark = [
@@ -44,12 +31,6 @@ pytestmark = [
 def perf_test_collection() -> str:
     """Generate a unique collection name for performance test isolation."""
     return f"perf_test_{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture
-def qdrant_client() -> QdrantClient:
-    """Create a Qdrant client for cleanup."""
-    return QdrantClient(url=QDRANT_URL)
 
 
 @pytest.fixture
