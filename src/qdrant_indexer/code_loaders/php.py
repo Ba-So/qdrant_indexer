@@ -8,12 +8,12 @@ from tree_sitter import Language, Parser
 
 from qdrant_indexer.models import CodeSymbol
 
-from .base import CodeLoader
+from .tree_sitter_base import TreeSitterCodeLoader
 
 logger = logging.getLogger(__name__)
 
 
-class PHPCodeLoader(CodeLoader):
+class PHPCodeLoader(TreeSitterCodeLoader):
     """Loader for PHP source files using tree-sitter.
 
     Extracts functions, classes, methods, interfaces, traits, and constants
@@ -144,49 +144,12 @@ class PHPCodeLoader(CodeLoader):
                     "utf-8"
                 )
                 if comment_text.startswith("/**"):
-                    return self._clean_phpdoc(comment_text)
+                    return self._clean_block_comment(comment_text)
             elif prev.type not in ("text", "php_tag"):
                 # Stop if we hit something that's not whitespace/comment
                 break
             prev = prev.prev_sibling
         return None
-
-    def _clean_phpdoc(self, comment: str) -> str:
-        """Clean up PHPDoc formatting.
-
-        Args:
-            comment: Raw PHPDoc comment including delimiters.
-
-        Returns:
-            Cleaned content without comment markers.
-        """
-        lines = comment.split("\n")
-        cleaned = []
-        for line in lines:
-            line = line.strip()
-            # Skip opening/closing markers
-            if line == "/**" or line == "*/":
-                continue
-            # Remove leading asterisk
-            if line.startswith("*"):
-                line = line[1:].strip()
-            if line:
-                cleaned.append(line)
-        return "\n".join(cleaned)
-
-    def _get_node_text(self, node, content_bytes: bytes) -> str:
-        """Get text content of a node.
-
-        Args:
-            node: Tree-sitter node.
-            content_bytes: Source code as bytes.
-
-        Returns:
-            Node text content.
-        """
-        if node is None:
-            return ""
-        return content_bytes[node.start_byte : node.end_byte].decode("utf-8")
 
     def _extract_function(
         self, node, content_bytes: bytes, content: str
@@ -392,27 +355,3 @@ class PHPCodeLoader(CodeLoader):
             line_end=node.end_point[0] + 1,
         )
 
-    def get_symbol_context(self, symbol: CodeSymbol) -> str:
-        """Format symbol for embedding.
-
-        Args:
-            symbol: The code symbol to format.
-
-        Returns:
-            Formatted context string for embedding.
-        """
-        parts = []
-
-        # Include visibility for PHP
-        if symbol.visibility:
-            parts.append(f"{symbol.visibility} {symbol.symbol_type}: {symbol.qualified_name}")
-        else:
-            parts.append(f"{symbol.symbol_type}: {symbol.qualified_name}")
-
-        if symbol.signature:
-            parts.append(symbol.signature)
-
-        if symbol.docstring:
-            parts.append(f"\n{symbol.docstring}")
-
-        return "\n".join(parts)

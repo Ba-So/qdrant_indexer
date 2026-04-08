@@ -8,12 +8,12 @@ from tree_sitter import Language, Parser
 
 from qdrant_indexer.models import CodeSymbol
 
-from .base import CodeLoader
+from .tree_sitter_base import TreeSitterCodeLoader
 
 logger = logging.getLogger(__name__)
 
 
-class RustCodeLoader(CodeLoader):
+class RustCodeLoader(TreeSitterCodeLoader):
     """Loader for Rust source files using tree-sitter.
 
     Extracts functions, structs, enums, traits, impl blocks, methods,
@@ -112,20 +112,6 @@ class RustCodeLoader(CodeLoader):
             for child in node.children:
                 self._walk_node(child, content_bytes, symbols, parent_name)
 
-    def _get_node_text(self, node, content_bytes: bytes) -> str:
-        """Get text content of a node.
-
-        Args:
-            node: Tree-sitter node.
-            content_bytes: Source code as bytes.
-
-        Returns:
-            Node text content.
-        """
-        if node is None:
-            return ""
-        return content_bytes[node.start_byte : node.end_byte].decode("utf-8")
-
     def _extract_doc_comment(self, node, content_bytes: bytes) -> str | None:
         """Extract doc comment above a node.
 
@@ -156,9 +142,9 @@ class RustCodeLoader(CodeLoader):
             elif prev.type == "block_comment":
                 comment_text = self._get_node_text(prev, content_bytes)
                 if comment_text.startswith("/**") and not comment_text.startswith("/**/"):
-                    return self._clean_block_doc(comment_text)
+                    return self._clean_block_comment(comment_text)
                 elif comment_text.startswith("/*!"):
-                    return self._clean_block_doc(comment_text)
+                    return self._clean_block_comment(comment_text)
                 else:
                     break
             elif prev.type == "attribute_item" or prev.type == "inner_attribute_item":
@@ -170,34 +156,6 @@ class RustCodeLoader(CodeLoader):
             prev = prev.prev_sibling
 
         return "\n".join(doc_lines) if doc_lines else None
-
-    def _clean_block_doc(self, comment: str) -> str:
-        """Clean up block doc comment formatting.
-
-        Args:
-            comment: Raw block comment including delimiters.
-
-        Returns:
-            Cleaned content without comment markers.
-        """
-        # Remove /** or /*! prefix and */ suffix
-        if comment.startswith("/**"):
-            comment = comment[3:]
-        elif comment.startswith("/*!"):
-            comment = comment[3:]
-        if comment.endswith("*/"):
-            comment = comment[:-2]
-
-        lines = comment.split("\n")
-        cleaned = []
-        for line in lines:
-            line = line.strip()
-            # Remove leading asterisk common in block comments
-            if line.startswith("*"):
-                line = line[1:].strip()
-            if line:
-                cleaned.append(line)
-        return "\n".join(cleaned)
 
     def _extract_visibility(self, node, content_bytes: bytes) -> str:
         """Extract visibility modifier from a node.
@@ -967,27 +925,3 @@ class RustCodeLoader(CodeLoader):
             },
         )
 
-    def get_symbol_context(self, symbol: CodeSymbol) -> str:
-        """Format symbol for embedding.
-
-        Args:
-            symbol: The code symbol to format.
-
-        Returns:
-            Formatted context string for embedding.
-        """
-        parts = []
-
-        # Include visibility for Rust
-        if symbol.visibility and symbol.visibility != "private":
-            parts.append(f"{symbol.visibility} {symbol.symbol_type}: {symbol.qualified_name}")
-        else:
-            parts.append(f"{symbol.symbol_type}: {symbol.qualified_name}")
-
-        if symbol.signature:
-            parts.append(symbol.signature)
-
-        if symbol.docstring:
-            parts.append(f"\n{symbol.docstring}")
-
-        return "\n".join(parts)

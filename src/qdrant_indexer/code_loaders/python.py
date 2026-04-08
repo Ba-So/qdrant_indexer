@@ -207,21 +207,3 @@ class PythonCodeLoader(CodeLoader):
             line_end=end_lineno,
         )
 
-    def get_symbol_context(self, symbol: CodeSymbol) -> str:
-        """Format symbol for embedding.
-
-        Args:
-            symbol: The code symbol to format.
-
-        Returns:
-            Formatted context string for embedding.
-        """
-        parts = [f"{symbol.symbol_type}: {symbol.qualified_name}"]
-
-        if symbol.signature:
-            parts.append(symbol.signature)
-
-        if symbol.docstring:
-            parts.append(f"\n{symbol.docstring}")
-
-        return "\n".join(parts)

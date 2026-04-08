@@ -17,7 +17,6 @@ class CodeLoader(DocumentLoader):
 
     Subclasses must implement:
         - extract_symbols: Parse source code and extract CodeSymbol objects
-        - get_symbol_context: Format a symbol for embedding/search
     """
 
     preferred_chunker: ClassVar[str] = "code"
@@ -35,12 +34,14 @@ class CodeLoader(DocumentLoader):
         """
         pass
 
-    @abstractmethod
     def get_symbol_context(self, symbol: CodeSymbol) -> str:
         """Get searchable context for a symbol.
 
-        Formats the symbol information (name, signature, docstring) into a
-        string suitable for embedding and semantic search.
+        Formats the symbol into a string suitable for embedding and semantic
+        search.  A visibility prefix is included when the symbol carries an
+        explicit, non-private visibility modifier (e.g. ``public`` in PHP,
+        ``pub`` in Rust).  Python symbols never set ``visibility``, so they
+        always use the bare ``type: name`` form.
 
         Args:
             symbol: The code symbol to format.
@@ -48,7 +49,22 @@ class CodeLoader(DocumentLoader):
         Returns:
             Formatted context string for embedding.
         """
-        pass
+        parts = []
+
+        if symbol.visibility:
+            parts.append(
+                f"{symbol.visibility} {symbol.symbol_type}: {symbol.qualified_name}"
+            )
+        else:
+            parts.append(f"{symbol.symbol_type}: {symbol.qualified_name}")
+
+        if symbol.signature:
+            parts.append(symbol.signature)
+
+        if symbol.docstring:
+            parts.append(f"\n{symbol.docstring}")
+
+        return "\n".join(parts)
 
     def load(self, path: Path) -> Document:
         """Load source file and extract symbols.

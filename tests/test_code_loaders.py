@@ -25,21 +25,35 @@ class TestCodeLoaderBase:
         """Verify subclass must implement extract_symbols."""
 
         class IncompleteLoader(CodeLoader):
-            def get_symbol_context(self, symbol: CodeSymbol) -> str:
-                return ""
+            pass
 
         with pytest.raises(TypeError):
             IncompleteLoader()
 
-    def test_code_loader_requires_get_symbol_context(self):
-        """Verify subclass must implement get_symbol_context."""
+    def test_code_loader_get_symbol_context_is_concrete(self):
+        """Verify get_symbol_context has a shared default implementation.
 
-        class IncompleteLoader(CodeLoader):
+        A subclass that only implements extract_symbols can be instantiated
+        and inherits get_symbol_context from CodeLoader.
+        """
+
+        class MinimalLoader(CodeLoader):
             def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:
                 return []
 
-        with pytest.raises(TypeError):
-            IncompleteLoader()
+        loader = MinimalLoader()
+        symbol = CodeSymbol(
+            name="foo",
+            qualified_name="foo",
+            symbol_type="function",
+            content="def foo(): pass",
+            language="python",
+            line_start=1,
+            line_end=1,
+        )
+        context = loader.get_symbol_context(symbol)
+        assert "foo" in context
+        assert "function" in context
 
 
 class MinimalCodeLoader(CodeLoader):
