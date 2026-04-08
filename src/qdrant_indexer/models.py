@@ -90,13 +90,14 @@ class CodeSymbol:
         qualified_name: Fully qualified name (e.g., 'MyClass.parse_segment').
         symbol_type: Type of symbol ('function', 'class', 'method', 'constant', 'module').
         content: Full source code of the symbol.
+        language: Source language ('python', 'php', or 'rust').
         docstring: Extracted documentation (Python docstring or PHPDoc).
         signature: Function/method signature (e.g., '(data: bytes) -> Segment').
         line_start: Starting line number in source file (1-indexed).
         line_end: Ending line number in source file (1-indexed).
         parent: Parent class name for methods, None for top-level symbols.
-        visibility: Access modifier for PHP ('public', 'private', 'protected'), None for Python.
-        language: Source language ('python', 'php', or 'rust').
+        visibility: Access modifier for PHP/Rust ('public', 'private', 'protected', 'pub'),
+            None for Python.
         metadata: Additional language-specific metadata (e.g., decorators, base classes).
     """
 
@@ -104,13 +105,13 @@ class CodeSymbol:
     qualified_name: str
     symbol_type: str
     content: str
-    docstring: str | None
-    signature: str | None
-    line_start: int
-    line_end: int
-    parent: str | None
-    visibility: str | None
     language: str
+    docstring: str | None = None
+    signature: str | None = None
+    line_start: int = 1
+    line_end: int = 1
+    parent: str | None = None
+    visibility: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

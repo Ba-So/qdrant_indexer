@@ -223,14 +223,11 @@ class PHPCodeLoader(CodeLoader):
             qualified_name=name,
             symbol_type="function",
             content=source,
+            language="php",
             docstring=phpdoc,
             signature=signature,
             line_start=node.start_point[0] + 1,
             line_end=node.end_point[0] + 1,
-            parent=None,
-            visibility=None,
-            language="php",
-            metadata={},
         )
 
     def _extract_class(self, node, content_bytes: bytes, content: str) -> CodeSymbol:
@@ -264,13 +261,10 @@ class PHPCodeLoader(CodeLoader):
             qualified_name=name,
             symbol_type="class",
             content=source,
+            language="php",
             docstring=phpdoc,
-            signature=None,
             line_start=node.start_point[0] + 1,
             line_end=node.end_point[0] + 1,
-            parent=None,
-            visibility=None,
-            language="php",
             metadata={"extends": extends, "implements": implements},
         )
 
@@ -322,14 +316,13 @@ class PHPCodeLoader(CodeLoader):
             qualified_name=qualified_name,
             symbol_type="method",
             content=source,
+            language="php",
             docstring=phpdoc,
             signature=signature,
             line_start=node.start_point[0] + 1,
             line_end=node.end_point[0] + 1,
             parent=parent_class,
             visibility=visibility,
-            language="php",
-            metadata={},
         )
 
     def _extract_constant(
@@ -363,14 +356,9 @@ class PHPCodeLoader(CodeLoader):
             qualified_name=name,
             symbol_type="constant",
             content=source,
-            docstring=None,
-            signature=None,
+            language="php",
             line_start=node.start_point[0] + 1,
             line_end=node.end_point[0] + 1,
-            parent=None,
-            visibility=None,
-            language="php",
-            metadata={},
         )
 
     def _extract_interface_trait(
@@ -398,14 +386,10 @@ class PHPCodeLoader(CodeLoader):
             qualified_name=name,
             symbol_type=symbol_type,
             content=source,
+            language="php",
             docstring=phpdoc,
-            signature=None,
             line_start=node.start_point[0] + 1,
             line_end=node.end_point[0] + 1,
-            parent=None,
-            visibility=None,
-            language="php",
-            metadata={},
         )
 
     def get_symbol_context(self, symbol: CodeSymbol) -> str:

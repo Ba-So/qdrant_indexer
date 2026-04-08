@@ -436,13 +436,11 @@ class TestCodeFileIndexing:
             qualified_name="test_func",
             symbol_type="function",
             content="def test_func(): pass",
+            language="python",
             docstring="Test function",
             signature="()",
             line_start=1,
             line_end=1,
-            parent=None,
-            visibility=None,
-            language="python",
         )
 
         payload = indexer._build_code_payload(
@@ -486,13 +484,10 @@ class TestCodeFileIndexing:
             qualified_name="test_func",
             symbol_type="function",
             content="def test_func(): pass",
-            docstring=None,
+            language="python",
             signature="()",
             line_start=1,
             line_end=1,
-            parent=None,
-            visibility=None,
-            language="python",
         )
 
         # Include symbols in metadata (simulating loaded document)
@@ -536,26 +531,22 @@ class TestCodeFileIndexing:
                 qualified_name="func1",
                 symbol_type="function",
                 content="def func1(): pass",
+                language="python",
                 docstring="First function",
                 signature="()",
                 line_start=1,
                 line_end=1,
-                parent=None,
-                visibility=None,
-                language="python",
             ),
             CodeSymbol(
                 name="func2",
                 qualified_name="func2",
                 symbol_type="function",
                 content="def func2(): pass",
+                language="python",
                 docstring="Second function",
                 signature="()",
                 line_start=3,
                 line_end=3,
-                parent=None,
-                visibility=None,
-                language="python",
             ),
         ]
 

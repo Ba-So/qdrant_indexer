@@ -45,14 +45,10 @@ class PythonCodeLoader(CodeLoader):
                     qualified_name=f"{file_path.stem}.__module__",
                     symbol_type="module",
                     content=module_doc,
+                    language="python",
                     docstring=module_doc,
-                    signature=None,
                     line_start=1,
                     line_end=1,
-                    parent=None,
-                    visibility=None,
-                    language="python",
-                    metadata={},
                 )
             )
 
@@ -138,13 +134,12 @@ class PythonCodeLoader(CodeLoader):
             qualified_name=qualified_name,
             symbol_type=symbol_type,
             content=func_source,
+            language="python",
             docstring=docstring,
             signature=sig,
             line_start=node.lineno,
             line_end=end_lineno,
             parent=parent_class,
-            visibility=None,
-            language="python",
             metadata={
                 "decorators": [ast.unparse(d) for d in node.decorator_list],
                 "is_async": is_async,
@@ -174,13 +169,11 @@ class PythonCodeLoader(CodeLoader):
             qualified_name=node.name,
             symbol_type="class",
             content=class_source,
+            language="python",
             docstring=docstring,
             signature=sig,
             line_start=node.lineno,
             line_end=end_lineno,
-            parent=None,
-            visibility=None,
-            language="python",
             metadata={
                 "bases": bases,
                 "decorators": [ast.unparse(d) for d in node.decorator_list],
@@ -209,14 +202,9 @@ class PythonCodeLoader(CodeLoader):
             qualified_name=target.id,
             symbol_type="constant",
             content=const_source,
-            docstring=None,
-            signature=None,
+            language="python",
             line_start=node.lineno,
             line_end=end_lineno,
-            parent=None,
-            visibility=None,
-            language="python",
-            metadata={},
         )
 
     def get_symbol_context(self, symbol: CodeSymbol) -> str:

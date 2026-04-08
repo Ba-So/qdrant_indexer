@@ -53,13 +53,11 @@ class MinimalCodeLoader(CodeLoader):
                 qualified_name="test_func",
                 symbol_type="function",
                 content="def test_func(): pass",
+                language="python",
                 docstring="Test function",
                 signature="()",
                 line_start=1,
                 line_end=1,
-                parent=None,
-                visibility=None,
-                language="python",
             )
         ]
 
@@ -168,13 +166,11 @@ class TestPythonCodeLoader:
             qualified_name="test_func",
             symbol_type="function",
             content="def test_func(x): pass",
+            language="python",
             docstring="Test function.",
             signature="(x)",
             line_start=1,
             line_end=1,
-            parent=None,
-            visibility=None,
-            language="python",
         )
 
         context = loader.get_symbol_context(symbol)
@@ -274,13 +270,12 @@ class TestPHPCodeLoader:
             qualified_name="testFunc",
             symbol_type="function",
             content="function testFunc($x) {}",
+            language="php",
             docstring="Test function.",
             signature="($x)",
             line_start=1,
             line_end=1,
-            parent=None,
             visibility="public",
-            language="php",
         )
 
         context = loader.get_symbol_context(symbol)
@@ -547,13 +542,12 @@ class TestRustCodeLoader:
             qualified_name="process",
             symbol_type="function",
             content="pub fn process(x: i32) -> i32 { x }",
+            language="rust",
             docstring="Process a value.",
             signature="pub fn process(x: i32) -> i32",
             line_start=1,
             line_end=1,
-            parent=None,
             visibility="pub",
-            language="rust",
         )
 
         context = loader.get_symbol_context(symbol)

@@ -15,13 +15,11 @@ class TestCodeSymbol:
             qualified_name="parse_segment",
             symbol_type="function",
             content="def parse_segment(data: bytes) -> Segment:\n    return Segment(data)",
+            language="python",
             docstring="Parse a segment from raw bytes.",
             signature="(data: bytes) -> Segment",
             line_start=10,
             line_end=15,
-            parent=None,
-            visibility=None,
-            language="python",
             metadata={"decorators": ["@staticmethod"]},
         )
 
@@ -73,13 +71,10 @@ class TestCodeSymbol:
             qualified_name="MyClass",
             symbol_type="class",
             content="class MyClass:\n    pass",
+            language="python",
             docstring="A sample class.",
-            signature=None,
             line_start=1,
             line_end=2,
-            parent=None,
-            visibility=None,
-            language="python",
             metadata={"base_classes": ["BaseClass"]},
         )
 
@@ -97,26 +92,20 @@ class TestCodeSymbol:
             qualified_name="func1",
             symbol_type="function",
             content="def func1(): pass",
-            docstring=None,
+            language="python",
             signature="()",
             line_start=1,
             line_end=1,
-            parent=None,
-            visibility=None,
-            language="python",
         )
         symbol2 = CodeSymbol(
             name="func2",
             qualified_name="func2",
             symbol_type="function",
             content="def func2(): pass",
-            docstring=None,
+            language="python",
             signature="()",
             line_start=2,
             line_end=2,
-            parent=None,
-            visibility=None,
-            language="python",
         )
 
         # Verify metadata defaults to empty dict
@@ -135,13 +124,10 @@ class TestCodeSymbol:
             qualified_name="MAX_SIZE",
             symbol_type="constant",
             content="MAX_SIZE = 1024",
+            language="python",
             docstring="Maximum size in bytes.",
-            signature=None,
             line_start=5,
             line_end=5,
-            parent=None,
-            visibility=None,
-            language="python",
         )
 
         assert symbol.name == "MAX_SIZE"
@@ -156,13 +142,12 @@ class TestCodeSymbol:
             qualified_name="Service.helperMethod",
             symbol_type="method",
             content="private function helperMethod() {}",
-            docstring=None,
+            language="php",
             signature="()",
             line_start=100,
             line_end=102,
             parent="Service",
             visibility="private",
-            language="php",
         )
 
         assert symbol.visibility == "private"
@@ -185,13 +170,10 @@ class TestModelIntegration:
             qualified_name="test",
             symbol_type="function",
             content="def test(): pass",
-            docstring=None,
+            language="python",
             signature="()",
             line_start=1,
             line_end=1,
-            parent=None,
-            visibility=None,
-            language="python",
         )
 
         assert isinstance(doc, Document)
