@@ -141,6 +141,23 @@ class IndexedFileState:
 
 
 @dataclass
+class IndexResult:
+    """Result of a full directory indexing operation.
+
+    Attributes:
+        total_files: Number of files successfully indexed.
+        total_chunks: Total chunks created across all files.
+        failed_files: Paths of files that failed to process.
+        skipped_files: Number of files skipped by exclusion patterns.
+    """
+
+    total_files: int
+    total_chunks: int
+    failed_files: list[str] = field(default_factory=list)
+    skipped_files: int = 0
+
+
+@dataclass
 class SyncResult:
     """Result of a directory synchronization operation.
 

@@ -14,7 +14,6 @@ import logging
 import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 
 import pytest
@@ -28,20 +27,7 @@ from qdrant_indexer.chunkers import (
     RecursiveChunker,
 )
 from qdrant_indexer.indexer import QdrantIndexer
-
-# Default Qdrant URL for tests
-QDRANT_URL = "http://localhost:6333"
-
-
-def qdrant_available() -> bool:
-    """Check if Qdrant is available at the default URL."""
-    try:
-        client = QdrantClient(url=QDRANT_URL, timeout=2)
-        client.get_collections()
-        return True
-    except Exception:
-        return False
-
+from tests.conftest import QDRANT_URL, qdrant_available
 
 # Skip all tests in this module if Qdrant is not available
 pytestmark = [
@@ -51,29 +37,6 @@ pytestmark = [
         reason="Qdrant not available at localhost:6333. Start with: docker compose up -d",
     ),
 ]
-
-
-@pytest.fixture
-def test_collection_name() -> str:
-    """Generate a unique collection name for test isolation."""
-    return f"test_integration_{uuid.uuid4().hex[:8]}"
-
-
-@pytest.fixture
-def qdrant_client() -> QdrantClient:
-    """Create a Qdrant client for direct verification."""
-    return QdrantClient(url=QDRANT_URL)
-
-
-@pytest.fixture
-def cleanup_collection(qdrant_client: QdrantClient, test_collection_name: str):
-    """Fixture to clean up test collection after test."""
-    yield test_collection_name
-    # Cleanup after test
-    try:
-        qdrant_client.delete_collection(test_collection_name)
-    except Exception:
-        pass  # Collection may not exist
 
 
 class TestIndexerIntegration:
@@ -150,7 +113,7 @@ More content here to ensure we have enough text for chunking.
         indexer.ensure_collection()
 
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
-        chunk_count, point_ids = indexer.index_file(test_file, chunker)
+        chunk_count, point_ids, _, _ = indexer.index_file(test_file, chunker)
 
         assert chunk_count > 0
         assert isinstance(point_ids, list)
@@ -187,13 +150,13 @@ More content here to ensure we have enough text for chunking.
         # Index all markdown files
         result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
 
-        assert result["total_files"] == 3  # doc1.md, doc2.md, nested.md
-        assert result["total_chunks"] > 0
-        assert len(result["failed_files"]) == 0
+        assert result.total_files == 3  # doc1.md, doc2.md, nested.md
+        assert result.total_chunks > 0
+        assert len(result.failed_files) == 0
 
         # Verify points exist
         collection_info = qdrant_client.get_collection(test_collection_name)
-        assert collection_info.points_count == result["total_chunks"]
+        assert collection_info.points_count == result.total_chunks
 
     def test_search_indexed_content(
         self,
@@ -274,8 +237,8 @@ Object-oriented programming in Python uses classes and objects.
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
 
         # Index the same file twice
-        count1, ids1 = indexer.index_file(test_file, chunker)
-        count2, ids2 = indexer.index_file(test_file, chunker)
+        count1, ids1, _, _ = indexer.index_file(test_file, chunker)
+        count2, ids2, _, _ = indexer.index_file(test_file, chunker)
 
         assert count1 == count2
         assert ids1 == ids2
@@ -346,7 +309,7 @@ class Calculator:
         indexer.ensure_collection()
 
         chunker = RecursiveChunker()
-        chunk_count, point_ids = indexer.index_file(code_file, chunker)
+        chunk_count, point_ids, _, _ = indexer.index_file(code_file, chunker)
 
         # Should have indexed symbols (module, function, class, 2 methods)
         assert chunk_count >= 4
@@ -658,8 +621,8 @@ class TestEdgeCases:
 
         result = indexer.index_directory(tmp_path, patterns=["**/*.md"])
 
-        assert result["total_files"] == 0
-        assert result["total_chunks"] == 0
+        assert result.total_files == 0
+        assert result.total_chunks == 0
 
     def test_binary_file_handling(
         self,
@@ -686,7 +649,7 @@ class TestEdgeCases:
         result = indexer.index_directory(tmp_path, patterns=["**/*"])
 
         # Should have indexed at least the text file
-        assert result["total_files"] >= 1
+        assert result.total_files >= 1
 
     def test_large_file_batching(
         self,
@@ -708,7 +671,7 @@ class TestEdgeCases:
         indexer.ensure_collection()
 
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
-        chunk_count, point_ids = indexer.index_file(large_file, chunker, batch_size=10)
+        chunk_count, point_ids, _, _ = indexer.index_file(large_file, chunker, batch_size=10)
 
         assert chunk_count > 10  # Should have many chunks
         assert isinstance(point_ids, list)
@@ -752,7 +715,7 @@ Math symbols: ∑ ∏ √ ∞ ≤ ≥ ≠
         indexer.ensure_collection()
 
         chunker = RecursiveChunker(chunk_size=200, overlap=20)
-        chunk_count, point_ids = indexer.index_file(test_file, chunker)
+        chunk_count, point_ids, _, _ = indexer.index_file(test_file, chunker)
 
         assert chunk_count > 0
         assert isinstance(point_ids, list)
@@ -799,8 +762,8 @@ Content in section two.
             # chunker=None triggers auto-selection
             result = indexer.index_directory(tmp_path, patterns=["**/*.md"], chunker=None)
 
-        assert result["total_files"] == 1
-        assert result["total_chunks"] > 0
+        assert result.total_files == 1
+        assert result.total_chunks > 0
         assert "Auto-selected MarkdownChunker" in caplog.text
 
     def test_auto_chunker_html(
@@ -843,8 +806,8 @@ Content in section two.
         with caplog.at_level(logging.DEBUG):
             result = indexer.index_directory(tmp_path, patterns=["**/*.html"], chunker=None)
 
-        assert result["total_files"] == 1
-        assert result["total_chunks"] > 0
+        assert result.total_files == 1
+        assert result.total_chunks > 0
         assert "Auto-selected HTMLChunker" in caplog.text
 
     def test_auto_chunker_code(
@@ -879,8 +842,8 @@ def goodbye_world():
         with caplog.at_level(logging.DEBUG):
             result = indexer.index_directory(tmp_path, patterns=["**/*.py"], chunker=None)
 
-        assert result["total_files"] == 1
-        assert result["total_chunks"] > 0
+        assert result.total_files == 1
+        assert result.total_chunks > 0
         assert "Auto-selected CodeChunker" in caplog.text
 
     def test_auto_chunker_mixed_directory(
@@ -917,8 +880,8 @@ def goodbye_world():
                 tmp_path, patterns=["**/*.md", "**/*.html", "**/*.py", "**/*.txt"], chunker=None
             )
 
-        assert result["total_files"] == 4
-        assert result["total_chunks"] > 0
+        assert result.total_files == 4
+        assert result.total_chunks > 0
 
         # Verify each file type got the correct chunker
         assert "Auto-selected MarkdownChunker for readme.md" in caplog.text
@@ -953,7 +916,7 @@ def goodbye_world():
                 tmp_path, patterns=["**/*.md"], chunker=explicit_chunker
             )
 
-        assert result["total_files"] == 1
-        assert result["total_chunks"] > 0
+        assert result.total_files == 1
+        assert result.total_chunks > 0
         # Auto-selection log should NOT appear when using explicit chunker
         assert "Auto-selected" not in caplog.text

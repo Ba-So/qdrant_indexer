@@ -24,7 +24,7 @@ from qdrant_client.models import (
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
 from qdrant_indexer.filters import _glob_and_dedup, filter_files
 from qdrant_indexer.loaders import get_loader
-from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, SyncResult
+from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, IndexResult, SyncResult
 from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
@@ -1127,7 +1127,7 @@ class QdrantIndexer:
         embedding_batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE,
         chunk_size: int = 1536,
         overlap: int = 200,
-    ) -> dict:
+    ) -> IndexResult:
         """Index all matching files in a directory with parallel processing.
 
         Args:
@@ -1144,7 +1144,7 @@ class QdrantIndexer:
             overlap: Overlap for auto-selected chunker (used when chunker is None).
 
         Returns:
-            Summary dict with total_files, total_chunks, failed_files, and skipped_files.
+            IndexResult with total_files, total_chunks, failed_files, and skipped_files.
         """
         if patterns is None:
             patterns = DEFAULT_INDEX_PATTERNS
@@ -1190,12 +1190,12 @@ class QdrantIndexer:
 
         if not all_chunks:
             logger.info("No chunks to index")
-            return {
-                "total_files": 0,
-                "total_chunks": 0,
-                "failed_files": failed_files,
-                "skipped_files": len(skipped),
-            }
+            return IndexResult(
+                total_files=0,
+                total_chunks=0,
+                failed_files=failed_files,
+                skipped_files=len(skipped),
+            )
 
         embeddings = self._embed_chunks_batched(all_chunks, embedding_batch_size, on_progress)
 
@@ -1206,12 +1206,12 @@ class QdrantIndexer:
         logger.info(
             f"Indexing complete: {len(loaded_files)} files, {total_chunks} chunks"
         )
-        return {
-            "total_files": len(loaded_files),
-            "total_chunks": total_chunks,
-            "failed_files": failed_files,
-            "skipped_files": len(skipped),
-        }
+        return IndexResult(
+            total_files=len(loaded_files),
+            total_chunks=total_chunks,
+            failed_files=failed_files,
+            skipped_files=len(skipped),
+        )
 
     def sync_directory(
         self,

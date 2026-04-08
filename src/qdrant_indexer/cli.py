@@ -22,6 +22,7 @@ from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, discover_files
+from qdrant_indexer.models import IndexResult, SyncResult
 from qdrant_indexer.indexer import (
     DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
@@ -89,10 +90,10 @@ def _make_index_progress_callback(progress, task):
 
 def _display_index_summary(
     console: Console,
-    result,
+    result: IndexResult | SyncResult,
     incremental: bool,
     gpu: bool,
-    indexer,
+    indexer: "QdrantIndexer",
     workers: int,
     elapsed: float,
 ) -> None:
@@ -109,13 +110,13 @@ def _display_index_summary(
         if result.failed:
             summary.add_row("Files failed:", f"[red]{len(result.failed)}[/red]")
     else:
-        summary.add_row("Files indexed:", f"[cyan]{result['total_files']}[/cyan]")
-        summary.add_row("Chunks created:", f"[cyan]{result['total_chunks']}[/cyan]")
-        if result["skipped_files"]:
-            summary.add_row("Files skipped:", f"[dim]{result['skipped_files']}[/dim]")
+        summary.add_row("Files indexed:", f"[cyan]{result.total_files}[/cyan]")
+        summary.add_row("Chunks created:", f"[cyan]{result.total_chunks}[/cyan]")
+        if result.skipped_files:
+            summary.add_row("Files skipped:", f"[dim]{result.skipped_files}[/dim]")
         summary.add_row("Workers:", f"[cyan]{workers}[/cyan]")
-        if result["failed_files"]:
-            summary.add_row("Failed files:", f"[red]{len(result['failed_files'])}[/red]")
+        if result.failed_files:
+            summary.add_row("Failed files:", f"[red]{len(result.failed_files)}[/red]")
 
     if gpu:
         gpu_status = (
@@ -132,9 +133,9 @@ def _display_index_summary(
         console.print("\n[yellow]Failed files:[/yellow]")
         for failed in result.failed:
             console.print(f"  [red]•[/red] {failed}")
-    elif not incremental and result["failed_files"]:
+    elif not incremental and result.failed_files:
         console.print("\n[yellow]Failed files:[/yellow]")
-        for failed in result["failed_files"]:
+        for failed in result.failed_files:
             console.print(f"  [red]•[/red] {failed}")
 
 
@@ -466,7 +467,7 @@ def index(
                     workers=workers,
                     embedding_batch_size=embedding_batch_size,
                 )
-                progress.update(task, description="Complete", completed=result["total_chunks"])
+                progress.update(task, description="Complete", completed=result.total_chunks)
 
         elapsed = time.time() - start_time
 
