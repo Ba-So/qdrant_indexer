@@ -570,6 +570,16 @@ class HTMLLoader(DocumentLoader):
         # Default HTML processing
         return self._load_from_soup(soup, path, stat)
 
+    def _remove_unwanted_tags(self, soup: BeautifulSoup) -> None:
+        """Remove all tags listed in UNWANTED_TAGS from the soup in-place.
+
+        Args:
+            soup: Parsed BeautifulSoup object to mutate.
+        """
+        for tag in self.UNWANTED_TAGS:
+            for element in soup.find_all(tag):
+                element.decompose()
+
     def _load_from_soup(self, soup: BeautifulSoup, path: Path, stat) -> Document:
         """Process parsed HTML soup into a Document.
 
@@ -585,9 +595,7 @@ class HTMLLoader(DocumentLoader):
         metadata = self._extract_metadata(soup, path, stat)
 
         # Remove unwanted tags
-        for tag in self.UNWANTED_TAGS:
-            for element in soup.find_all(tag):
-                element.decompose()
+        self._remove_unwanted_tags(soup)
 
         # Extract clean text
         text = soup.get_text(separator="\n", strip=True)
@@ -688,10 +696,8 @@ class RustdocLoader(HTMLLoader):
         if rust_code:
             metadata["signature"] = rust_code.get_text(strip=True)
 
-        # Remove unwanted tags (parent class tags)
-        for tag_name in self.UNWANTED_TAGS:
-            for element in soup.find_all(tag_name):
-                element.decompose()
+        # Remove unwanted tags (inherited from HTMLLoader)
+        self._remove_unwanted_tags(soup)
 
         # Remove rustdoc-specific classes
         for class_name in self.RUSTDOC_UNWANTED_CLASSES:
