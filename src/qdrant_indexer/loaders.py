@@ -1,6 +1,9 @@
 """Document loaders for different file formats."""
 
+import hashlib
+import io
 import logging
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
@@ -126,9 +129,6 @@ class PDFImageExtractor:
         Returns:
             List of ExtractedImage objects ordered by page then appearance.
         """
-        import hashlib
-        import io
-
         from PIL import Image
 
         images: list[ExtractedImage] = []
@@ -140,7 +140,7 @@ class PDFImageExtractor:
                 for img_info in page.get_images(full=True):
                     xref = img_info[0]
                     image = self._process_single_image(
-                        doc, page, page_num, xref, seen_hashes, hashlib, io, Image
+                        doc, page, page_num, xref, seen_hashes, Image
                     )
                     if image is not None:
                         images.append(image)
@@ -160,8 +160,6 @@ class PDFImageExtractor:
         page_num: int,
         xref: int,
         seen_hashes: set[str],
-        hashlib,
-        io,
         Image,
     ) -> ExtractedImage | None:
         """Extract, convert, and annotate one image xref from a page.
@@ -181,7 +179,7 @@ class PDFImageExtractor:
             if width < self.min_image_size or height < self.min_image_size:
                 return None
 
-            png_data = self._to_png(image_bytes, io, Image)
+            png_data = self._to_png(image_bytes, Image)
             if png_data is None:
                 return None
 
@@ -207,7 +205,7 @@ class PDFImageExtractor:
         except Exception:
             return None
 
-    def _to_png(self, image_bytes: bytes, io, Image) -> bytes | None:
+    def _to_png(self, image_bytes: bytes, Image) -> bytes | None:
         """Convert raw image bytes to PNG format using Pillow.
 
         Returns None when Pillow cannot decode the image.
@@ -296,8 +294,6 @@ class PDFImageExtractor:
         Returns:
             Caption text (truncated to CAPTION_CHAR_LIMIT) or None.
         """
-        import re
-
         x0, y0, x1, y1 = bbox
         page_rect = page.rect
         pad = self.CAPTION_HORIZONTAL_PADDING
@@ -486,8 +482,6 @@ class PDFLoader(DocumentLoader):
         Returns:
             DOI string or None if not found.
         """
-        import re
-
         # Common DOI patterns:
         # - doi:10.xxxx/xxxxx
         # - DOI: 10.xxxx/xxxxx
