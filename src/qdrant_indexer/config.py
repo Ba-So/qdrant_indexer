@@ -1,6 +1,11 @@
 """Configuration handling for Qdrant Indexer."""
 
+import dataclasses
 import os
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 # Default embedding model name
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -14,11 +19,6 @@ DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
 # PDF extensions that need process‑based parallelism (PyMuPDF is not thread‑safe)
 PDF_EXTENSIONS = {".pdf"}
 
-import tomllib
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
-
 
 @dataclass
 class QdrantConfig:
@@ -31,7 +31,7 @@ class QdrantConfig:
 class EmbeddingConfig:
     """Embedding model configuration."""
 
-    model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    model: str = DEFAULT_EMBEDDING_MODEL
     cache_dir: str | None = None
 
 
@@ -74,6 +74,20 @@ class Config:
 
 
 DEFAULT_CONFIG_FILENAMES = ["config.toml", ".qdrant-indexer.toml"]
+
+# Maps CLI kwarg names to dotted config paths ("section.field").
+# This is the single authoritative record of how CLI arguments map to config fields.
+_CLI_OVERRIDE_MAP: dict[str, str] = {
+    "url": "qdrant.url",
+    "embedding_model": "embedding.model",
+    "chunk_size": "chunking.chunk_size",
+    "chunk_overlap": "chunking.chunk_overlap",
+    "batch_size": "indexing.batch_size",
+    "pattern": "indexing.pattern",
+    "enable_images": "image_embedding.enabled",
+    "clip_model": "image_embedding.vision_model",
+    "min_image_size": "image_embedding.min_image_size",
+}
 
 
 def find_config_file(start_path: Path | None = None) -> Path | None:
@@ -131,55 +145,32 @@ def load_config(config_path: Path | None = None) -> Config:
     return config
 
 
+def _parse_nested(dc_instance: Any, section_data: dict[str, Any]) -> Any:
+    """Return a new instance of dc_instance's type, with fields overridden by section_data.
+
+    Only keys present in section_data that correspond to actual dataclass fields are
+    applied; unknown keys are silently ignored so that future TOML additions don't
+    crash older code.
+    """
+    known_fields = {f.name for f in dataclasses.fields(dc_instance)}
+    kwargs = {k: v for k, v in section_data.items() if k in known_fields}
+    return dataclasses.replace(dc_instance, **kwargs)
+
+
 def _parse_config(data: dict[str, Any]) -> Config:
-    """Parse TOML data into Config object."""
+    """Parse TOML data into Config object.
+
+    Each top-level key in data maps to the matching Config attribute by name.
+    Fields within each section are applied generically via dataclasses.replace,
+    so adding a new field to a nested dataclass requires no changes here.
+    """
     config = Config()
-
-    if "qdrant" in data:
-        qdrant_data = data["qdrant"]
-        config.qdrant = QdrantConfig(
-            url=qdrant_data.get("url", config.qdrant.url),
-        )
-
-    if "embedding" in data:
-        embed_data = data["embedding"]
-        config.embedding = EmbeddingConfig(
-            model=embed_data.get("model", config.embedding.model),
-            cache_dir=embed_data.get("cache_dir", config.embedding.cache_dir),
-        )
-
-    if "chunking" in data:
-        chunk_data = data["chunking"]
-        config.chunking = ChunkingConfig(
-            strategy=chunk_data.get("strategy", config.chunking.strategy),
-            chunk_size=chunk_data.get("chunk_size", config.chunking.chunk_size),
-            chunk_overlap=chunk_data.get(
-                "chunk_overlap", config.chunking.chunk_overlap
-            ),
-        )
-
-    if "indexing" in data:
-        index_data = data["indexing"]
-        config.indexing = IndexingConfig(
-            batch_size=index_data.get("batch_size", config.indexing.batch_size),
-            pattern=index_data.get("pattern", config.indexing.pattern),
-            exclude_patterns=index_data.get(
-                "exclude_patterns", config.indexing.exclude_patterns
-            ),
-        )
-
-    if "image_embedding" in data:
-        img_data = data["image_embedding"]
-        config.image_embedding = ImageEmbeddingConfig(
-            enabled=img_data.get("enabled", config.image_embedding.enabled),
-            vision_model=img_data.get(
-                "vision_model", config.image_embedding.vision_model
-            ),
-            min_image_size=img_data.get(
-                "min_image_size", config.image_embedding.min_image_size
-            ),
-        )
-
+    # Config attribute names match the TOML section names exactly.
+    for config_field in dataclasses.fields(config):
+        section_name = config_field.name
+        if section_name in data:
+            updated = _parse_nested(getattr(config, section_name), data[section_name])
+            setattr(config, section_name, updated)
     return config
 
 
@@ -196,8 +187,29 @@ def _apply_env_overrides(config: Config) -> Config:
     return config
 
 
+def _deep_copy_config(config: Config) -> Config:
+    """Return a deep copy of config, duplicating each nested dataclass instance.
+
+    list fields are shallow-copied so that mutations to list contents in the
+    copy do not affect the original (and vice-versa).
+    """
+    section_copies: dict[str, Any] = {}
+    for config_field in dataclasses.fields(config):
+        section = getattr(config, config_field.name)
+        field_kwargs: dict[str, Any] = {}
+        for nested_field in dataclasses.fields(section):
+            value = getattr(section, nested_field.name)
+            field_kwargs[nested_field.name] = list(value) if isinstance(value, list) else value
+        section_copies[config_field.name] = type(section)(**field_kwargs)
+    return Config(**section_copies)
+
+
 def merge_config(config: Config, **overrides: Any) -> Config:
     """Merge CLI arguments into config (CLI takes precedence).
+
+    The mapping from kwarg names to config fields is defined in _CLI_OVERRIDE_MAP.
+    Only non-None override values are applied, preserving the loaded config value
+    when a CLI flag was not supplied.
 
     Args:
         config: Base configuration.
@@ -206,61 +218,14 @@ def merge_config(config: Config, **overrides: Any) -> Config:
     Returns:
         New Config with overrides applied.
     """
-    # Create copies of nested configs
-    qdrant = QdrantConfig(url=config.qdrant.url)
-    embedding = EmbeddingConfig(
-        model=config.embedding.model,
-        cache_dir=config.embedding.cache_dir,
-    )
-    chunking = ChunkingConfig(
-        strategy=config.chunking.strategy,
-        chunk_size=config.chunking.chunk_size,
-        chunk_overlap=config.chunking.chunk_overlap,
-    )
-    indexing = IndexingConfig(
-        batch_size=config.indexing.batch_size,
-        pattern=config.indexing.pattern,
-        exclude_patterns=list(config.indexing.exclude_patterns),
-    )
-    image_embedding = ImageEmbeddingConfig(
-        enabled=config.image_embedding.enabled,
-        vision_model=config.image_embedding.vision_model,
-        min_image_size=config.image_embedding.min_image_size,
-    )
+    result = _deep_copy_config(config)
 
-    # Apply overrides
-    if "url" in overrides and overrides["url"] is not None:
-        qdrant.url = overrides["url"]
+    for kwarg_name, dotted_path in _CLI_OVERRIDE_MAP.items():
+        value = overrides.get(kwarg_name)
+        if value is None:
+            continue
+        section_name, field_name = dotted_path.split(".", 1)
+        section = getattr(result, section_name)
+        setattr(section, field_name, value)
 
-    if "embedding_model" in overrides and overrides["embedding_model"] is not None:
-        embedding.model = overrides["embedding_model"]
-
-    if "chunk_size" in overrides and overrides["chunk_size"] is not None:
-        chunking.chunk_size = overrides["chunk_size"]
-
-    if "chunk_overlap" in overrides and overrides["chunk_overlap"] is not None:
-        chunking.chunk_overlap = overrides["chunk_overlap"]
-
-    if "batch_size" in overrides and overrides["batch_size"] is not None:
-        indexing.batch_size = overrides["batch_size"]
-
-    if "pattern" in overrides and overrides["pattern"] is not None:
-        indexing.pattern = overrides["pattern"]
-
-    # Image embedding overrides
-    if "enable_images" in overrides and overrides["enable_images"] is not None:
-        image_embedding.enabled = overrides["enable_images"]
-
-    if "clip_model" in overrides and overrides["clip_model"] is not None:
-        image_embedding.vision_model = overrides["clip_model"]
-
-    if "min_image_size" in overrides and overrides["min_image_size"] is not None:
-        image_embedding.min_image_size = overrides["min_image_size"]
-
-    return Config(
-        qdrant=qdrant,
-        embedding=embedding,
-        chunking=chunking,
-        indexing=indexing,
-        image_embedding=image_embedding,
-    )
+    return result
