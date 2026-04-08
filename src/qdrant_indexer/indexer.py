@@ -127,6 +127,89 @@ def clip_model_to_vector_name(model_name: str) -> str:
 ProgressCallback = Callable[[ProgressEvent, int, int, str], None]
 
 
+class EmbeddingService:
+    """Encapsulates text and image embedding model initialization and inference.
+
+    Owns the FastEmbed TextEmbedding and (optionally) ImageEmbedding models.
+    Has no knowledge of Qdrant, file loading, or chunking.
+
+    Attributes:
+        text_vector_size: Dimensionality of the text embedding vectors.
+        text_vector_name: Qdrant-compatible vector name for text embeddings.
+        clip_vector_size: Dimensionality of the CLIP image vectors (0 if disabled).
+        clip_vector_name: Qdrant-compatible vector name for image embeddings ('' if disabled).
+    """
+
+    def __init__(
+        self,
+        embedding_model: str,
+        providers: list[str],
+        enable_images: bool = False,
+        clip_vision_model: str = DEFAULT_CLIP_VISION_MODEL,
+    ):
+        """Initialize embedding models.
+
+        Args:
+            embedding_model: FastEmbed model name for text embeddings.
+            providers: ONNX execution providers in priority order (e.g. CUDA, CPU).
+            enable_images: Whether to prepare for CLIP image embedding.
+            clip_vision_model: FastEmbed CLIP model name (used only when enable_images=True).
+        """
+        model_info = get_model_info(embedding_model)
+        self.text_vector_size: int = model_info["dim"]
+        self.text_vector_name: str = model_to_vector_name(embedding_model)
+
+        self._text_model = TextEmbedding(model_name=embedding_model, providers=providers)
+        self._providers = providers
+        self._enable_images = enable_images
+        self._clip_vision_model = clip_vision_model
+        self._image_model = None  # lazy-initialized on first use
+
+        if enable_images:
+            clip_info = get_clip_model_info(clip_vision_model)
+            self.clip_vector_size: int = clip_info["dim"]
+            self.clip_vector_name: str = clip_model_to_vector_name(clip_vision_model)
+        else:
+            self.clip_vector_size = 0
+            self.clip_vector_name = ""
+
+    def embed_texts(self, texts: list[str]) -> list:
+        """Generate text embedding vectors for a list of strings.
+
+        Args:
+            texts: Strings to embed.
+
+        Returns:
+            List of embedding vectors (one per text) in the same order.
+        """
+        return list(self._text_model.embed(texts))
+
+    def embed_images(self, pil_images: list) -> list:
+        """Generate CLIP embedding vectors for a list of PIL images.
+
+        The image model is lazy-initialized on the first call.
+
+        Args:
+            pil_images: PIL Image objects to embed.
+
+        Returns:
+            List of embedding vectors (one per image) in the same order.
+
+        Raises:
+            RuntimeError: If called when enable_images=False.
+        """
+        if not self._enable_images:
+            raise RuntimeError("Image embedding is not enabled for this EmbeddingService")
+        if self._image_model is None:
+            from fastembed import ImageEmbedding
+
+            self._image_model = ImageEmbedding(
+                model_name=self._clip_vision_model,
+                providers=self._providers,
+            )
+        return list(self._image_model.embed(pil_images))
+
+
 def _load_pdf_file(args: tuple) -> dict:
     """Load a PDF file in a separate process.
 
@@ -255,7 +338,7 @@ class QdrantIndexer:
     Attributes:
         client: QdrantClient instance for database operations.
         collection: Name of the Qdrant collection to use.
-        embeddings: TextEmbedding model for generating vectors.
+        embedder: EmbeddingService handling text and image embedding.
         use_cuda: Whether GPU acceleration is enabled.
         enable_image_embeddings: Whether image embedding is enabled.
         clip_vision_model: CLIP model name for image embeddings.
@@ -300,25 +383,20 @@ class QdrantIndexer:
 
         self.use_cuda = use_cuda
 
-        # Get model info for vector dimensions
-        model_info = get_model_info(embedding_model)
-        self._vector_size = model_info["dim"]
-        self._vector_name = model_to_vector_name(embedding_model)
-
-        # Configure execution providers
         providers = get_default_providers(use_cuda)
-
-        self.embeddings = TextEmbedding(
-            model_name=embedding_model,
+        self.embedder = EmbeddingService(
+            embedding_model=embedding_model,
             providers=providers,
+            enable_images=enable_image_embeddings,
+            clip_vision_model=clip_vision_model,
         )
 
-        # Lazy-init image embeddings (only when needed)
-        self._image_embeddings = None
+        # Expose vector names/sizes for collection management
+        self._vector_size = self.embedder.text_vector_size
+        self._vector_name = self.embedder.text_vector_name
         if enable_image_embeddings:
-            clip_info = get_clip_model_info(clip_vision_model)
-            self._clip_vector_size = clip_info["dim"]
-            self._clip_vector_name = clip_model_to_vector_name(clip_vision_model)
+            self._clip_vector_size = self.embedder.clip_vector_size
+            self._clip_vector_name = self.embedder.clip_vector_name
 
         logger.debug(
             f"Initialized indexer for collection '{collection_name}' at {qdrant_url} "
@@ -328,18 +406,6 @@ class QdrantIndexer:
             logger.debug(
                 f"Image embeddings enabled with CLIP model '{clip_vision_model}'"
             )
-
-    def _get_image_embeddings(self):
-        """Lazy-initialize and return the ImageEmbedding model."""
-        if self._image_embeddings is None:
-            from fastembed import ImageEmbedding
-
-            providers = get_default_providers(self.use_cuda)
-            self._image_embeddings = ImageEmbedding(
-                model_name=self.clip_vision_model,
-                providers=providers,
-            )
-        return self._image_embeddings
 
     def ensure_collection(self) -> bool:
         """Ensure the collection exists, creating it if necessary.
@@ -583,7 +649,7 @@ class QdrantIndexer:
 
         # Generate embeddings for all chunks at once (more efficient)
         logger.debug(f"Generating embeddings for {total_chunks} chunks")
-        embeddings = list(self.embeddings.embed(chunks))
+        embeddings = self.embedder.embed_texts(chunks)
 
         all_points: list[PointStruct] = []
         for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
@@ -665,7 +731,7 @@ class QdrantIndexer:
         # Generate embeddings for all chunks
         logger.debug(f"Generating embeddings for {total_chunks} code chunks")
         chunk_texts = [chunk_text for chunk_text, _ in chunks_with_symbols]
-        embeddings = list(self.embeddings.embed(chunk_texts))
+        embeddings = self.embedder.embed_texts(chunk_texts)
 
         all_points: list[PointStruct] = []
         for i, ((chunk_text, symbol), vector) in enumerate(
@@ -1012,7 +1078,7 @@ class QdrantIndexer:
 
         for i in range(0, len(chunk_texts), embedding_batch_size):
             batch = chunk_texts[i : i + embedding_batch_size]
-            embeddings.extend(list(self.embeddings.embed(batch)))
+            embeddings.extend(self.embedder.embed_texts(batch))
 
             if on_progress:
                 completed = min(i + embedding_batch_size, total_chunks)
@@ -1599,7 +1665,6 @@ class QdrantIndexer:
         if not images:
             return 0, []
 
-        image_embedder = self._get_image_embeddings()
         total_images = len(images)
         point_ids: list[int] = []
 
@@ -1613,7 +1678,7 @@ class QdrantIndexer:
             pil_images.append(pil_img)
 
         # Generate embeddings
-        embeddings = list(image_embedder.embed(pil_images))
+        embeddings = self.embedder.embed_images(pil_images)
 
         all_points: list[PointStruct] = []
         for i, (image, vector) in enumerate(zip(images, embeddings)):
