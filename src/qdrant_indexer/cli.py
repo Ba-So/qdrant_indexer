@@ -21,7 +21,7 @@ from rich.progress import (
 from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
-from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, filter_files
+from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, discover_files
 from qdrant_indexer.indexer import (
     DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
@@ -526,26 +526,13 @@ def status(
     state = IndexState(state_file)
     state.load()
 
-    # Discover current files
-    all_files = []
-    seen = set()
-    for p in pattern:
-        for f in path.glob(p):
-            if f.is_file() and f not in seen:
-                all_files.append(f)
-                seen.add(f)
-
     # Build exclude patterns list
     exclude_patterns = list(exclude) if exclude else []
     if not no_default_excludes:
         exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
 
-    files, _ = filter_files(
-        all_files,
-        path,
-        exclude_patterns if exclude_patterns else None,
-        use_defaults=False,
-    )
+    # Discover current files
+    files = discover_files(path, pattern, exclude_patterns)
 
     # Analyze status
     current_paths = {str(f.absolute()) for f in files}

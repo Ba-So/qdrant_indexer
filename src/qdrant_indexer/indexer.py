@@ -22,7 +22,7 @@ from qdrant_client.models import (
 )
 
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
-from qdrant_indexer.filters import filter_files
+from qdrant_indexer.filters import _glob_and_dedup, filter_files
 from qdrant_indexer.loaders import get_loader
 from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, SyncResult
 from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
@@ -820,21 +820,13 @@ class QdrantIndexer:
     ) -> tuple[list[Path], list[Path]]:
         """Glob for files matching patterns under path, deduplicate, then apply exclusions.
 
-        Args:
-            path: Root directory to search.
-            patterns: Glob patterns relative to path (e.g. ``["**/*.md", "**/*.pdf"]``).
-            exclude_patterns: Additional glob patterns whose matches are excluded.
+        Delegates globbing and deduplication to :func:`_glob_and_dedup` and
+        returns both included and skipped lists for caller logging.
 
         Returns:
             Tuple of (included_files, skipped_files).
         """
-        all_files: list[Path] = []
-        seen: set[Path] = set()
-        for pattern in patterns:
-            for f in path.glob(pattern):
-                if f.is_file() and f not in seen:
-                    all_files.append(f)
-                    seen.add(f)
+        all_files = _glob_and_dedup(path, patterns)
         return filter_files(all_files, path, exclude_patterns)
 
     def _load_files_parallel(

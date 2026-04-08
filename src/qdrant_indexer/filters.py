@@ -68,6 +68,47 @@ def should_exclude(file_path: Path, base_path: Path, exclude_patterns: list[str]
     return False
 
 
+def _glob_and_dedup(directory: Path, patterns: list[str]) -> list[Path]:
+    """Glob *patterns* under *directory* and deduplicate via resolved paths."""
+    all_files: list[Path] = []
+    seen: set[Path] = set()
+    for pattern in patterns:
+        for f in directory.glob(pattern):
+            if f.is_file():
+                resolved = f.resolve()
+                if resolved not in seen:
+                    all_files.append(f)
+                    seen.add(resolved)
+    return all_files
+
+
+def discover_files(
+    directory: Path,
+    patterns: list[str],
+    exclude_patterns: list[str] | None = None,
+) -> list[Path]:
+    """Discover files in a directory matching glob patterns, deduplicated and filtered.
+
+    Globs each pattern under *directory*, deduplicates results via resolved paths
+    so that symlinks pointing to the same file are counted only once, then applies
+    ``filter_files`` with *exclude_patterns* to remove unwanted files.
+
+    Args:
+        directory: Root directory to search.
+        patterns: Glob patterns relative to *directory* (e.g. ``["**/*.md"]``).
+        exclude_patterns: Glob patterns whose matches are excluded.
+            The default-exclude list from ``filter_files`` is NOT applied
+            automatically — callers should include ``DEFAULT_EXCLUDE_PATTERNS``
+            in *exclude_patterns* when desired.
+
+    Returns:
+        Deduplicated, filtered list of matching file paths.
+    """
+    all_files = _glob_and_dedup(directory, patterns)
+    included, _ = filter_files(all_files, directory, exclude_patterns, use_defaults=False)
+    return included
+
+
 def filter_files(
     files: list[Path],
     base_path: Path,
