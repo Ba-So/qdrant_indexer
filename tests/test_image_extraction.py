@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from qdrant_indexer.loaders import PDFLoader
+from qdrant_indexer.loaders import PDFImageExtractor, PDFLoader
 from qdrant_indexer.models import ExtractedImage
 
 
@@ -71,9 +71,9 @@ class TestCaptionDetection:
     """Tests for caption detection heuristics."""
 
     @pytest.fixture
-    def loader(self):
-        """Return a PDFLoader instance."""
-        return PDFLoader()
+    def extractor(self):
+        """Return a PDFImageExtractor instance."""
+        return PDFImageExtractor()
 
     @pytest.fixture
     def mock_page(self):
@@ -84,52 +84,52 @@ class TestCaptionDetection:
         mock.rect.height = 792
         return mock
 
-    def test_detect_caption_figure_format(self, loader, mock_page):
+    def test_detect_caption_figure_format(self, extractor, mock_page):
         """Test caption detection with 'Figure X:' format."""
         mock_page.get_text.return_value = [
             (10, 500, 200, 520, "Figure 1: A test image showing results", 0, 0)
         ]
 
-        result = loader._detect_caption(mock_page, (10, 400, 200, 495))
+        result = extractor._detect_caption(mock_page, (10, 400, 200, 495))
 
         # Should find the caption
         mock_page.get_text.assert_called_once()
 
-    def test_detect_caption_fig_abbreviated(self, loader, mock_page):
+    def test_detect_caption_fig_abbreviated(self, extractor, mock_page):
         """Test caption detection with 'Fig.' abbreviation."""
         mock_page.get_text.return_value = [
             (10, 500, 200, 520, "Fig. 2 - Comparison of methods", 0, 0)
         ]
 
-        result = loader._detect_caption(mock_page, (10, 400, 200, 495))
+        result = extractor._detect_caption(mock_page, (10, 400, 200, 495))
 
         mock_page.get_text.assert_called_once()
 
-    def test_detect_caption_table_format(self, loader, mock_page):
+    def test_detect_caption_table_format(self, extractor, mock_page):
         """Test caption detection with 'Table X:' format."""
         mock_page.get_text.return_value = [
             (10, 500, 200, 520, "Table 3: Summary statistics", 0, 0)
         ]
 
-        result = loader._detect_caption(mock_page, (10, 400, 200, 495))
+        result = extractor._detect_caption(mock_page, (10, 400, 200, 495))
 
         mock_page.get_text.assert_called_once()
 
-    def test_detect_caption_no_match(self, loader, mock_page):
+    def test_detect_caption_no_match(self, extractor, mock_page):
         """Test caption detection returns None when no caption found."""
         mock_page.get_text.return_value = [
             (10, 500, 200, 520, "Regular paragraph text without caption markers", 0, 0)
         ]
 
-        result = loader._detect_caption(mock_page, (10, 400, 200, 495))
+        result = extractor._detect_caption(mock_page, (10, 400, 200, 495))
 
         assert result is None
 
-    def test_detect_caption_empty_blocks(self, loader, mock_page):
+    def test_detect_caption_empty_blocks(self, extractor, mock_page):
         """Test caption detection with empty text blocks."""
         mock_page.get_text.return_value = []
 
-        result = loader._detect_caption(mock_page, (10, 400, 200, 495))
+        result = extractor._detect_caption(mock_page, (10, 400, 200, 495))
 
         assert result is None
 
@@ -138,9 +138,9 @@ class TestSurroundingTextExtraction:
     """Tests for surrounding text extraction."""
 
     @pytest.fixture
-    def loader(self):
-        """Return a PDFLoader instance."""
-        return PDFLoader()
+    def extractor(self):
+        """Return a PDFImageExtractor instance."""
+        return PDFImageExtractor()
 
     @pytest.fixture
     def mock_page(self):
@@ -151,34 +151,34 @@ class TestSurroundingTextExtraction:
         mock.rect.height = 792
         return mock
 
-    def test_get_surrounding_text_basic(self, loader, mock_page):
+    def test_get_surrounding_text_basic(self, extractor, mock_page):
         """Test basic surrounding text extraction."""
         mock_page.get_text.return_value = [
             (10, 100, 200, 120, "Text above the image", 0, 0),
             (10, 300, 200, 320, "Text below the image", 0, 0),
         ]
 
-        result = loader._get_surrounding_text(mock_page, (10, 150, 200, 250))
+        result = extractor._get_surrounding_text(mock_page, (10, 150, 200, 250))
 
         assert result is not None
         mock_page.get_text.assert_called_once()
 
-    def test_get_surrounding_text_empty(self, loader, mock_page):
+    def test_get_surrounding_text_empty(self, extractor, mock_page):
         """Test surrounding text extraction with no text blocks."""
         mock_page.get_text.return_value = []
 
-        result = loader._get_surrounding_text(mock_page, (10, 150, 200, 250))
+        result = extractor._get_surrounding_text(mock_page, (10, 150, 200, 250))
 
         assert result is None
 
-    def test_get_surrounding_text_truncation(self, loader, mock_page):
+    def test_get_surrounding_text_truncation(self, extractor, mock_page):
         """Test that long surrounding text is truncated."""
         long_text = "x" * 600
         mock_page.get_text.return_value = [
             (10, 100, 200, 120, long_text, 0, 0),
         ]
 
-        result = loader._get_surrounding_text(mock_page, (10, 150, 200, 250))
+        result = extractor._get_surrounding_text(mock_page, (10, 150, 200, 250))
 
         if result:
             assert len(result) <= 503  # 500 + "..."

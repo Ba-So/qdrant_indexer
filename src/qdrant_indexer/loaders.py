@@ -809,6 +809,31 @@ CODE_EXTENSIONS: dict[str, str] = {
 }
 
 
+_CODE_LOADERS: dict[str, type[DocumentLoader]] | None = None
+
+
+def _get_code_loaders() -> dict[str, type[DocumentLoader]]:
+    """Return the code-loader registry, building it once on first call.
+
+    The import is deferred to avoid a circular dependency between loaders.py
+    and code_loaders.py.
+    """
+    global _CODE_LOADERS
+    if _CODE_LOADERS is None:
+        from qdrant_indexer.code_loaders import (
+            PHPCodeLoader,
+            PythonCodeLoader,
+            RustCodeLoader,
+        )
+
+        _CODE_LOADERS = {
+            "python": PythonCodeLoader,
+            "php": PHPCodeLoader,
+            "rust": RustCodeLoader,
+        }
+    return _CODE_LOADERS
+
+
 def get_loader(file_path: Path) -> DocumentLoader:
     """Get the appropriate loader for a file based on its extension.
 
@@ -827,19 +852,8 @@ def get_loader(file_path: Path) -> DocumentLoader:
 
     # Check code loaders (lazy import to avoid circular dependency)
     if extension in CODE_EXTENSIONS:
-        from qdrant_indexer.code_loaders import (
-            PHPCodeLoader,
-            PythonCodeLoader,
-            RustCodeLoader,
-        )
-
-        CODE_LOADERS = {
-            "python": PythonCodeLoader,
-            "php": PHPCodeLoader,
-            "rust": RustCodeLoader,
-        }
         code_type = CODE_EXTENSIONS[extension]
-        loader_cls = CODE_LOADERS.get(code_type)
+        loader_cls = _get_code_loaders().get(code_type)
         if loader_cls is not None:
             return loader_cls()
 
