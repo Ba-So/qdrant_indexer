@@ -558,23 +558,6 @@ class PDFLoader(DocumentLoader):
         """
         return self._image_extractor.extract_images(path)
 
-    def _get_image_bbox(
-        self, page: fitz.Page, xref: int
-    ) -> tuple[float, float, float, float] | None:
-        """Delegate to PDFImageExtractor._get_image_bbox."""
-        return self._image_extractor._get_image_bbox(page, xref)
-
-    def _get_surrounding_text(
-        self, page: fitz.Page, bbox: tuple[float, float, float, float]
-    ) -> str | None:
-        """Delegate to PDFImageExtractor._get_surrounding_text."""
-        return self._image_extractor._get_surrounding_text(page, bbox)
-
-    def _detect_caption(
-        self, page: fitz.Page, bbox: tuple[float, float, float, float]
-    ) -> str | None:
-        """Delegate to PDFImageExtractor._detect_caption."""
-        return self._image_extractor._detect_caption(page, bbox)
 
 
 class ReStructuredTextLoader(DocumentLoader):
@@ -850,13 +833,15 @@ def get_loader(file_path: Path) -> DocumentLoader:
             RustCodeLoader,
         )
 
+        CODE_LOADERS = {
+            "python": PythonCodeLoader,
+            "php": PHPCodeLoader,
+            "rust": RustCodeLoader,
+        }
         code_type = CODE_EXTENSIONS[extension]
-        if code_type == "python":
-            return PythonCodeLoader()
-        elif code_type == "php":
-            return PHPCodeLoader()
-        elif code_type == "rust":
-            return RustCodeLoader()
+        loader_cls = CODE_LOADERS.get(code_type)
+        if loader_cls is not None:
+            return loader_cls()
 
     # Default to text loader
     return TextLoader()
