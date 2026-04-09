@@ -79,7 +79,7 @@ class PythonCodeLoader(CodeLoader):
             elif isinstance(node, ast.Assign):
                 # Extract module-level constants (NAME = value pattern)
                 # Only at module level (parent is Module)
-                if hasattr(node, "parent") or self._is_module_level(node, tree):
+                if self._is_module_level(node, tree):
                     for target in node.targets:
                         if isinstance(target, ast.Name) and target.id.isupper():
                             symbols.append(self._extract_constant(node, target, content))
