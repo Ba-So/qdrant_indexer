@@ -8,3 +8,5 @@ __pycache__
 .codannaignore
 .codanna
 result
+.shared
+.orchestrator
