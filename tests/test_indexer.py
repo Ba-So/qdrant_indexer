@@ -6,6 +6,7 @@ import pytest
 
 from qdrant_indexer.chunkers import RecursiveChunker
 from qdrant_indexer.indexer import QdrantIndexer
+from qdrant_indexer.payloads import build_code_payload, build_payload, generate_point_id
 
 
 class TestQdrantIndexerInit:
@@ -151,37 +152,34 @@ class TestHelperMethods:
         indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
-        id1 = indexer._generate_point_id(file_path, 0)
-        id2 = indexer._generate_point_id(file_path, 0)
+        id1 = generate_point_id(file_path, 0)
+        id2 = generate_point_id(file_path, 0)
 
         assert id1 == id2
 
     def test_generate_point_id_different_for_different_chunks(self, mock_indexer_env, tmp_path: Path):
         """Different chunk indices produce different IDs."""
-        indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
-        id1 = indexer._generate_point_id(file_path, 0)
-        id2 = indexer._generate_point_id(file_path, 1)
+        id1 = generate_point_id(file_path, 0)
+        id2 = generate_point_id(file_path, 1)
 
         assert id1 != id2
 
     def test_generate_point_id_positive(self, mock_indexer_env, tmp_path: Path):
         """All IDs are positive int64."""
-        indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
         for i in range(100):
-            point_id = indexer._generate_point_id(file_path, i)
+            point_id = generate_point_id(file_path, i)
             assert point_id > 0
             assert point_id < 2**63
 
     def test_build_payload_required_fields(self, mock_indexer_env, tmp_path: Path):
         """Verify all required fields present."""
-        indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
-        payload = indexer._build_payload(
+        payload = build_payload(
             chunk="Test content",
             file_path=file_path,
             chunk_index=0,
@@ -198,10 +196,9 @@ class TestHelperMethods:
 
     def test_build_payload_merges_metadata(self, mock_indexer_env, tmp_path: Path):
         """Verify custom metadata included."""
-        indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.md"
 
-        payload = indexer._build_payload(
+        payload = build_payload(
             chunk="Test content",
             file_path=file_path,
             chunk_index=0,
@@ -285,7 +282,7 @@ class TestCodeFileIndexing:
             line_end=1,
         )
 
-        payload = indexer._build_code_payload(
+        payload = build_code_payload(
             chunk="function: test_func\n()\nTest function",
             symbol=symbol,
             file_path=file_path,
@@ -308,10 +305,9 @@ class TestCodeFileIndexing:
         assert meta["filename"] == "test.py"
 
     def test_build_code_payload_excludes_symbols_from_metadata(self, mock_indexer_env, tmp_path: Path):
-        """Verify _build_code_payload doesn't include large symbols list."""
+        """Verify build_code_payload doesn't include large symbols list."""
         from qdrant_indexer.models import CodeSymbol
 
-        indexer = QdrantIndexer("http://localhost:6333", "test")
         file_path = tmp_path / "test.py"
 
         symbol = CodeSymbol(
@@ -331,7 +327,7 @@ class TestCodeFileIndexing:
             "symbols": [symbol, symbol, symbol],
         }
 
-        payload = indexer._build_code_payload(
+        payload = build_code_payload(
             chunk="function: test_func",
             symbol=symbol,
             file_path=file_path,
