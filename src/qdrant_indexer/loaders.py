@@ -560,23 +560,6 @@ class PDFLoader(DocumentLoader):
         """
         return self._image_extractor.extract_images(path)
 
-    def _get_image_bbox(
-        self, page: fitz.Page, xref: int
-    ) -> tuple[float, float, float, float] | None:
-        """Delegate to PDFImageExtractor._get_image_bbox."""
-        return self._image_extractor._get_image_bbox(page, xref)
-
-    def _get_surrounding_text(
-        self, page: fitz.Page, bbox: tuple[float, float, float, float]
-    ) -> str | None:
-        """Delegate to PDFImageExtractor._get_surrounding_text."""
-        return self._image_extractor._get_surrounding_text(page, bbox)
-
-    def _detect_caption(
-        self, page: fitz.Page, bbox: tuple[float, float, float, float]
-    ) -> str | None:
-        """Delegate to PDFImageExtractor._detect_caption."""
-        return self._image_extractor._detect_caption(page, bbox)
 
 
 class ReStructuredTextLoader(DocumentLoader):
@@ -828,6 +811,31 @@ CODE_EXTENSIONS: dict[str, str] = {
 }
 
 
+_CODE_LOADERS: dict[str, type[DocumentLoader]] | None = None
+
+
+def _get_code_loaders() -> dict[str, type[DocumentLoader]]:
+    """Return the code-loader registry, building it once on first call.
+
+    The import is deferred to avoid a circular dependency between loaders.py
+    and code_loaders.py.
+    """
+    global _CODE_LOADERS
+    if _CODE_LOADERS is None:
+        from qdrant_indexer.code_loaders import (
+            PHPCodeLoader,
+            PythonCodeLoader,
+            RustCodeLoader,
+        )
+
+        _CODE_LOADERS = {
+            "python": PythonCodeLoader,
+            "php": PHPCodeLoader,
+            "rust": RustCodeLoader,
+        }
+    return _CODE_LOADERS
+
+
 def get_loader(file_path: Path) -> DocumentLoader:
     """Get the appropriate loader for a file based on its extension.
 
@@ -846,19 +854,10 @@ def get_loader(file_path: Path) -> DocumentLoader:
 
     # Check code loaders (lazy import to avoid circular dependency)
     if extension in CODE_EXTENSIONS:
-        from qdrant_indexer.code_loaders import (
-            PHPCodeLoader,
-            PythonCodeLoader,
-            RustCodeLoader,
-        )
-
         code_type = CODE_EXTENSIONS[extension]
-        if code_type == "python":
-            return PythonCodeLoader()
-        elif code_type == "php":
-            return PHPCodeLoader()
-        elif code_type == "rust":
-            return RustCodeLoader()
+        loader_cls = _get_code_loaders().get(code_type)
+        if loader_cls is not None:
+            return loader_cls()
 
     # Default to text loader
     return TextLoader()

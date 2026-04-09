@@ -23,7 +23,7 @@ from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_INDEX_PATTERNS, discover_files
-from qdrant_indexer.models import IndexResult, ProgressEvent, SyncResult
+from qdrant_indexer.models import IndexedFileState, IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.indexer import (
     DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_EMBEDDING_BATCH_SIZE,
@@ -658,6 +658,33 @@ def status(
             console.print(f"  ... and {len(modified_files) - 5} more")
 
 
+def _delete_file_entries(
+    indexer: QdrantIndexer,
+    file_entries: dict[str, IndexedFileState],
+    quiet: bool,
+    console: Console,
+) -> tuple[int, set[str]]:
+    """Delete Qdrant points for each file entry. Returns (total_deleted, failed_paths).
+
+    failed_paths contains the raw file_path_str keys for entries that could not be
+    deleted, so callers can skip them when updating state without parsing error strings.
+    """
+    total_deleted = 0
+    failed_paths: set[str] = set()
+    for file_path_str, file_state in file_entries.items():
+        try:
+            all_ids = file_state.chunk_ids + file_state.image_ids
+            indexer.delete_points_by_ids(all_ids)
+            total_deleted += len(all_ids)
+        except Exception as e:
+            failed_paths.add(file_path_str)
+            if not quiet:
+                console.print(
+                    f"[red]Error removing {Path(file_path_str).name}: {e}[/red]"
+                )
+    return total_deleted, failed_paths
+
+
 @app.command()
 def clean(
     path: Annotated[Path, typer.Argument(help="Directory to clean")],
@@ -728,27 +755,17 @@ def clean(
                     abort=True,
                 )
 
-            total_deleted = 0
-            failed = []
-            for file_path_str, file_state in state.files.items():
-                try:
-                    all_ids = file_state.chunk_ids + file_state.image_ids
-                    indexer.delete_points_by_ids(all_ids)
-                    total_deleted += len(all_ids)
-                except Exception as e:
-                    failed.append(f"{file_path_str}: {e}")
-                    if not quiet:
-                        console.print(
-                            f"[red]Error removing {Path(file_path_str).name}: {e}[/red]"
-                        )
+            total_deleted, failed_paths = _delete_file_entries(
+                indexer, state.files, quiet, console
+            )
 
             # Remove state file
             state_file.unlink()
 
             if not quiet:
-                if failed:
+                if failed_paths:
                     console.print(
-                        f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]"
+                        f"\n[yellow]Failed to remove {len(failed_paths)} file(s)[/yellow]"
                     )
                 display_success(
                     f"Removed {total_deleted} points and deleted state file"
@@ -772,29 +789,22 @@ def clean(
                     abort=True,
                 )
 
-            total_deleted = 0
-            failed = []
-            for file_path_str in deleted_files:
-                file_state = state.files.get(file_path_str)
-                if file_state:
-                    try:
-                        all_ids = file_state.chunk_ids + file_state.image_ids
-                        indexer.delete_points_by_ids(all_ids)
-                        state.remove_file(Path(file_path_str))
-                        total_deleted += len(all_ids)
-                    except Exception as e:
-                        failed.append(f"{file_path_str}: {e}")
-                        if not quiet:
-                            console.print(
-                                f"[red]Error removing {Path(file_path_str).name}: {e}[/red]"
-                            )
+            file_entries = {
+                fp: state.files[fp] for fp in deleted_files if fp in state.files
+            }
+            total_deleted, failed_paths = _delete_file_entries(
+                indexer, file_entries, quiet, console
+            )
+            for file_path_str in file_entries:
+                if file_path_str not in failed_paths:
+                    state.remove_file(Path(file_path_str))
 
             state.save()
 
             if not quiet:
-                if failed:
+                if failed_paths:
                     console.print(
-                        f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]"
+                        f"\n[yellow]Failed to remove {len(failed_paths)} file(s)[/yellow]"
                     )
                 display_success(
                     f"Removed {total_deleted} points from {len(deleted_files)} deleted files"
