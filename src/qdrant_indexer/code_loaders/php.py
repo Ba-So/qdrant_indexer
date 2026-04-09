@@ -120,9 +120,7 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         prev = node.prev_sibling
         while prev:
             if prev.type == "comment":
-                comment_text = content_bytes[prev.start_byte : prev.end_byte].decode(
-                    "utf-8"
-                )
+                comment_text = self._get_node_text(prev, content_bytes)
                 if comment_text.startswith("/**"):
                     return self._clean_block_comment(comment_text)
             elif prev.type not in ("text", "php_tag"):
