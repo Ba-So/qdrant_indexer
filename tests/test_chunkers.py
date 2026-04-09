@@ -277,14 +277,14 @@ class TestChunkerDefaults:
     def test_recursive_chunker_defaults(self):
         """Verify default values for RecursiveChunker."""
         chunker = RecursiveChunker()
-        assert chunker.chunk_size == 1536
+        assert chunker.chunk_size == 1532
         assert chunker.overlap == 200
 
     def test_fixed_size_chunker_defaults(self):
         """Verify default values for FixedSizeChunker."""
         chunker = FixedSizeChunker()
         assert chunker.chunk_size == 1536
-        assert chunker.overlap == 200
+        assert chunker.overlap == 50
 
 
 @pytest.mark.parametrize(

@@ -198,20 +198,18 @@ Object-oriented programming in Python uses classes and objects.
 
         # Search for content using the same embedding model
         from fastembed import TextEmbedding
-        from qdrant_client.models import NamedVector
 
         embedding_model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
         query_vector = list(embedding_model.embed(["Python programming"]))[0]
 
-        # Use named vector since the collection uses named vectors
-        results = qdrant_client.search(
+        # Use query_points with named vector
+        response = qdrant_client.query_points(
             collection_name=test_collection_name,
-            query_vector=NamedVector(
-                name="fast-all-minilm-l6-v2",
-                vector=list(query_vector),
-            ),
+            query=list(query_vector),
+            using="fast-all-minilm-l6-v2",
             limit=3,
         )
+        results = response.points
 
         assert len(results) > 0
         # Should find content related to Python
@@ -322,7 +320,6 @@ class Calculator:
 
         # Search for the function using embeddings
         from fastembed import TextEmbedding
-        from qdrant_client.models import NamedVector
 
         embedding_model = TextEmbedding(
             model_name="sentence-transformers/all-MiniLM-L6-v2",
@@ -330,25 +327,25 @@ class Calculator:
         )
         query_vector = list(embedding_model.embed(["helper function that doubles"]))[0]
 
-        # Use named vector since the collection uses named vectors
-        results = qdrant_client.search(
+        # Use query_points with named vector
+        response = qdrant_client.query_points(
             collection_name=test_collection_name,
-            query_vector=NamedVector(
-                name="fast-all-minilm-l6-v2",
-                vector=list(query_vector),
-            ),
+            query=list(query_vector),
+            using="fast-all-minilm-l6-v2",
             limit=5,
         )
+        results = response.points
 
         assert len(results) > 0
 
-        # Check for code-specific metadata
+        # Check for code-specific metadata (nested under "metadata" key)
         found_code_payload = False
         for result in results:
-            if "symbol_type" in result.payload and "language" in result.payload:
+            meta = result.payload.get("metadata", result.payload)
+            if "symbol_type" in meta and "language" in meta:
                 found_code_payload = True
-                assert result.payload["language"] == "python"
-                assert result.payload["symbol_type"] in ["function", "class", "method", "module"]
+                assert meta["language"] == "python"
+                assert meta["symbol_type"] in ["function", "class", "method", "module"]
                 break
 
         assert found_code_payload, "No code-specific metadata found in results"
