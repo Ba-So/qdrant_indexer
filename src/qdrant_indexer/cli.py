@@ -844,6 +844,38 @@ def show_excludes() -> None:
     console.print("\n[dim]Use --no-default-excludes to disable these.[/dim]")
 
 
+def _list_models_table(
+    models: list[dict],
+    title: str,
+    default_model: str,
+    search: str | None,
+    console: Console,
+) -> None:
+    """Filter, sort, and display a table of embedding models."""
+    if search:
+        search_lower = search.lower()
+        models = [m for m in models if search_lower in m["model"].lower()]
+
+    if not models:
+        console.print(f"[yellow]No models found matching '{search}'[/yellow]")
+        return
+
+    table = Table(title=title)
+    table.add_column("Model", style="cyan")
+    table.add_column("Dimensions", justify="right")
+    table.add_column("Description", style="dim")
+
+    for model in sorted(models, key=lambda m: m["model"]):
+        desc = model.get("description", "")
+        if len(desc) > 50:
+            desc = desc[:47] + "..."
+        table.add_row(model["model"], str(model.get("dim", "?")), desc)
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(models)} models[/dim]")
+    console.print(f"[dim]Default: {default_model}[/dim]")
+
+
 @app.command("list-models")
 def list_models(
     search: Annotated[
@@ -865,36 +897,13 @@ def list_models(
     """
     from fastembed import TextEmbedding
 
-    models = TextEmbedding.list_supported_models()
-
-    # Filter if search term provided
-    if search:
-        search_lower = search.lower()
-        models = [m for m in models if search_lower in m["model"].lower()]
-
-    if not models:
-        console.print(f"[yellow]No models found matching '{search}'[/yellow]")
-        return
-
-    table = Table(title="FastEmbed Embedding Models")
-    table.add_column("Model", style="cyan")
-    table.add_column("Dimensions", justify="right")
-    table.add_column("Description", style="dim")
-
-    for model in sorted(models, key=lambda m: m["model"]):
-        desc = model.get("description", "")
-        # Truncate long descriptions
-        if len(desc) > 50:
-            desc = desc[:47] + "..."
-        table.add_row(
-            model["model"],
-            str(model.get("dim", "?")),
-            desc,
-        )
-
-    console.print(table)
-    console.print(f"\n[dim]Total: {len(models)} models[/dim]")
-    console.print(f"[dim]Default: {DEFAULT_EMBEDDING_MODEL}[/dim]")
+    _list_models_table(
+        TextEmbedding.list_supported_models(),
+        "FastEmbed Embedding Models",
+        DEFAULT_EMBEDDING_MODEL,
+        search,
+        console,
+    )
 
 
 @app.command("list-clip-models")
@@ -918,36 +927,13 @@ def list_clip_models(
     """
     from fastembed import ImageEmbedding
 
-    models = ImageEmbedding.list_supported_models()
-
-    # Filter if search term provided
-    if search:
-        search_lower = search.lower()
-        models = [m for m in models if search_lower in m["model"].lower()]
-
-    if not models:
-        console.print(f"[yellow]No models found matching '{search}'[/yellow]")
-        return
-
-    table = Table(title="FastEmbed CLIP/Image Models")
-    table.add_column("Model", style="cyan")
-    table.add_column("Dimensions", justify="right")
-    table.add_column("Description", style="dim")
-
-    for model in sorted(models, key=lambda m: m["model"]):
-        desc = model.get("description", "")
-        # Truncate long descriptions
-        if len(desc) > 50:
-            desc = desc[:47] + "..."
-        table.add_row(
-            model["model"],
-            str(model.get("dim", "?")),
-            desc,
-        )
-
-    console.print(table)
-    console.print(f"\n[dim]Total: {len(models)} models[/dim]")
-    console.print(f"[dim]Default: {DEFAULT_CLIP_VISION_MODEL}[/dim]")
+    _list_models_table(
+        ImageEmbedding.list_supported_models(),
+        "FastEmbed CLIP/Image Models",
+        DEFAULT_CLIP_VISION_MODEL,
+        search,
+        console,
+    )
 
 
 if __name__ == "__main__":
