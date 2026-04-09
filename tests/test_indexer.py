@@ -441,3 +441,35 @@ class TestDeletionMethods:
             collection_name="test-collection",
             points_selector=[1, 2, 3],
         )
+
+    def test_delete_file_chunks_multi_page_pagination(self, mock_indexer_env):
+        """Test delete_file_chunks follows pagination across two pages.
+
+        scroll returns next_offset=42 on the first call (more pages exist) and
+        None on the second call (last page). Both pages of IDs must be collected
+        and passed together to a single client.delete call.
+        """
+        from qdrant_client.models import Record
+
+        page_one = [Record(id=10, payload={}, vector=None), Record(id=11, payload={}, vector=None)]
+        page_two = [Record(id=20, payload={}, vector=None)]
+
+        mock_indexer_env.mock_client.scroll.side_effect = [
+            (page_one, 42),
+            (page_two, None),
+        ]
+
+        indexer = QdrantIndexer("http://localhost:6333", "test-collection")
+
+        deleted_count = indexer.delete_file_chunks(Path("/test/multipage.md"))
+
+        assert deleted_count == 3
+        assert mock_indexer_env.mock_client.scroll.call_count == 2
+
+        second_call_offset = mock_indexer_env.mock_client.scroll.call_args_list[1].kwargs["offset"]
+        assert second_call_offset == 42
+
+        mock_indexer_env.mock_client.delete.assert_called_once_with(
+            collection_name="test-collection",
+            points_selector=[10, 11, 20],
+        )

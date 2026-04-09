@@ -478,19 +478,24 @@ class QdrantIndexer:
             Number of points deleted.
         """
         source = str(file_path.absolute())
-
-        # Query to count points before deletion
-        result = self.client.scroll(
-            collection_name=self.collection,
-            scroll_filter=Filter(
-                must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
-            ),
-            limit=10000,  # Reasonable limit
-            with_payload=False,
-            with_vectors=False,
+        scroll_filter = Filter(
+            must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
         )
-
-        point_ids = [point.id for point in result[0]]
+        point_ids: list[int] = []
+        offset = None
+        while True:
+            batch, next_offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=scroll_filter,
+                limit=1000,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            point_ids.extend(point.id for point in batch)
+            if next_offset is None:
+                break
+            offset = next_offset
 
         if point_ids:
             self.client.delete(
@@ -1472,6 +1477,32 @@ class QdrantIndexer:
         # Convert first 8 bytes to int64 and ensure positive
         return int.from_bytes(hash_obj.digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
 
+    def _base_metadata(
+        self,
+        file_path: Path,
+        metadata: dict,
+        chunk_index: int | None = None,
+        total_chunks: int | None = None,
+    ) -> dict:
+        """Build shared metadata dict, always excluding 'symbols'.
+
+        chunk_index and total_chunks are only included when provided; image
+        payloads omit them to avoid polluting the image schema with text-chunk
+        fields.
+        """
+        base: dict = {
+            "source": str(file_path.absolute()),
+            "timestamp": datetime.now().isoformat(),
+        }
+        if chunk_index is not None:
+            base["chunk_index"] = chunk_index
+        if total_chunks is not None:
+            base["total_chunks"] = total_chunks
+        for key, value in metadata.items():
+            if key != "symbols":
+                base[key] = value
+        return base
+
     def _build_payload(
         self,
         chunk: str,
@@ -1492,19 +1523,11 @@ class QdrantIndexer:
         Returns:
             Payload dict with all fields.
         """
-        # Build nested metadata object (required by mcp-server-qdrant)
-        nested_metadata = {
-            "source": str(file_path.absolute()),
-            "chunk_index": chunk_index,
-            "total_chunks": total_chunks,
-            "timestamp": datetime.now().isoformat(),
-        }
-        # Merge document metadata into nested metadata
-        nested_metadata.update(metadata)
-
         return {
             "document": chunk,  # Field name required by qdrant-mcp
-            "metadata": nested_metadata,
+            "metadata": self._base_metadata(
+                file_path, metadata, chunk_index=chunk_index, total_chunks=total_chunks
+            ),
         }
 
     def _build_code_payload(
@@ -1529,28 +1552,24 @@ class QdrantIndexer:
         Returns:
             Payload dict with all fields including code-specific metadata.
         """
-        # Build nested metadata object (required by mcp-server-qdrant)
-        nested_metadata = {
-            "source": str(file_path.absolute()),
-            "chunk_index": chunk_index,
-            "total_chunks": total_chunks,
-            "timestamp": datetime.now().isoformat(),
-            # Code-specific metadata
-            "language": symbol.language,
-            "symbol_type": symbol.symbol_type,
-            "symbol_name": symbol.name,
-            "symbol_qualified_name": symbol.qualified_name,
-            "signature": symbol.signature or "",
-            "docstring": symbol.docstring or "",
-            "line_start": symbol.line_start,
-            "line_end": symbol.line_end,
-            "parent_class": symbol.parent or "",
-            "visibility": symbol.visibility or "",
-        }
-        # Merge document metadata (excluding symbols to avoid large payload)
-        for key, value in metadata.items():
-            if key != "symbols":
-                nested_metadata[key] = value
+        nested_metadata = self._base_metadata(
+            file_path, metadata, chunk_index=chunk_index, total_chunks=total_chunks
+        )
+        # Code-specific metadata
+        nested_metadata.update(
+            {
+                "language": symbol.language,
+                "symbol_type": symbol.symbol_type,
+                "symbol_name": symbol.name,
+                "symbol_qualified_name": symbol.qualified_name,
+                "signature": symbol.signature or "",
+                "docstring": symbol.docstring or "",
+                "line_start": symbol.line_start,
+                "line_end": symbol.line_end,
+                "parent_class": symbol.parent or "",
+                "visibility": symbol.visibility or "",
+            }
+        )
 
         return {
             "document": chunk,  # Field name required by qdrant-mcp
@@ -1601,25 +1620,22 @@ class QdrantIndexer:
             doc_parts.append(image.surrounding_text)
         document_text = " ".join(doc_parts) if doc_parts else ""
 
-        # Build nested metadata object (required by mcp-server-qdrant)
-        nested_metadata = {
-            "source": str(file_path.absolute()),
-            "content_type": "image",
-            "image_index": image_index,
-            "total_images": total_images,
-            "page_number": image.page_number,
-            "width": image.width,
-            "height": image.height,
-            "bbox": list(image.bbox),
-            "caption": image.caption or "",
-            "surrounding_text": image.surrounding_text or "",
-            "image_hash": image.image_hash or "",
-            "timestamp": datetime.now().isoformat(),
-        }
-        # Merge document metadata (excluding symbols)
-        for key, value in metadata.items():
-            if key != "symbols":
-                nested_metadata[key] = value
+        nested_metadata = self._base_metadata(file_path, metadata)
+        # Image-specific metadata
+        nested_metadata.update(
+            {
+                "content_type": "image",
+                "image_index": image_index,
+                "total_images": total_images,
+                "page_number": image.page_number,
+                "width": image.width,
+                "height": image.height,
+                "bbox": list(image.bbox),
+                "caption": image.caption or "",
+                "surrounding_text": image.surrounding_text or "",
+                "image_hash": image.image_hash or "",
+            }
+        )
 
         return {
             "document": document_text,
