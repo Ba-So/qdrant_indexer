@@ -202,7 +202,8 @@ class PDFImageExtractor:
                 caption=self._detect_caption(page, bbox),
                 image_hash=image_hash,
             )
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Skipping image xref={xref} on page {page_num}: {e}")
             return None
 
     def _to_png(self, image_bytes: bytes, Image) -> bytes | None:
@@ -215,7 +216,8 @@ class PDFImageExtractor:
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             return buf.getvalue()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Could not convert image bytes to PNG: {e}")
             return None
 
     def _get_image_bbox(
