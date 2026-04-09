@@ -1475,17 +1475,24 @@ class QdrantIndexer:
     def _base_metadata(
         self,
         file_path: Path,
-        chunk_index: int,
-        total_chunks: int,
         metadata: dict,
+        chunk_index: int | None = None,
+        total_chunks: int | None = None,
     ) -> dict:
-        """Build shared metadata dict, always excluding 'symbols'."""
-        base = {
+        """Build shared metadata dict, always excluding 'symbols'.
+
+        chunk_index and total_chunks are only included when provided; image
+        payloads omit them to avoid polluting the image schema with text-chunk
+        fields.
+        """
+        base: dict = {
             "source": str(file_path.absolute()),
-            "chunk_index": chunk_index,
-            "total_chunks": total_chunks,
             "timestamp": datetime.now().isoformat(),
         }
+        if chunk_index is not None:
+            base["chunk_index"] = chunk_index
+        if total_chunks is not None:
+            base["total_chunks"] = total_chunks
         for key, value in metadata.items():
             if key != "symbols":
                 base[key] = value
@@ -1513,7 +1520,9 @@ class QdrantIndexer:
         """
         return {
             "document": chunk,  # Field name required by qdrant-mcp
-            "metadata": self._base_metadata(file_path, chunk_index, total_chunks, metadata),
+            "metadata": self._base_metadata(
+                file_path, metadata, chunk_index=chunk_index, total_chunks=total_chunks
+            ),
         }
 
     def _build_code_payload(
@@ -1538,7 +1547,9 @@ class QdrantIndexer:
         Returns:
             Payload dict with all fields including code-specific metadata.
         """
-        nested_metadata = self._base_metadata(file_path, chunk_index, total_chunks, metadata)
+        nested_metadata = self._base_metadata(
+            file_path, metadata, chunk_index=chunk_index, total_chunks=total_chunks
+        )
         # Code-specific metadata
         nested_metadata.update(
             {
@@ -1604,8 +1615,8 @@ class QdrantIndexer:
             doc_parts.append(image.surrounding_text)
         document_text = " ".join(doc_parts) if doc_parts else ""
 
-        nested_metadata = self._base_metadata(file_path, image_index, total_images, metadata)
-        # Image-specific metadata (overrides chunk_index/total_chunks keys with image equivalents)
+        nested_metadata = self._base_metadata(file_path, metadata)
+        # Image-specific metadata
         nested_metadata.update(
             {
                 "content_type": "image",
