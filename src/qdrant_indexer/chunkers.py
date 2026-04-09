@@ -39,15 +39,15 @@ class Chunker(ABC):
 class _WithFallback:
     """Mixin that provides a cached RecursiveChunker fallback.
 
-    Intended for chunker classes that expose ``chunk_size`` and ``overlap``
-    attributes and need to delegate oversized or unstructured content to
-    RecursiveChunker without constructing a fresh instance at each call site.
+    Subclasses must expose ``chunk_size: int`` and ``overlap: int``.
     """
+    chunk_size: int
+    overlap: int
 
     @cached_property
     def _fallback_chunker(self) -> "RecursiveChunker":
         """RecursiveChunker configured with this chunker's chunk_size and overlap."""
-        return RecursiveChunker(self.chunk_size, self.overlap)  # type: ignore[attr-defined]
+        return RecursiveChunker(self.chunk_size, self.overlap)
 
 
 class RecursiveChunker(Chunker):
@@ -1146,13 +1146,10 @@ class SemanticChunker(_WithFallback, Chunker):
             if len(chunk) <= self.chunk_size:
                 final_result.append(chunk)
             else:
-                sub_chunks = self._fallback_chunk(chunk)
+                sub_chunks = self._fallback_chunker.chunk(chunk)
                 final_result.extend(sub_chunks)
 
         return final_result
-
-    def _fallback_chunk(self, text: str) -> list[str]:
-        return self._fallback_chunker.chunk(text)
 
     def chunk(self, text: str) -> list[str]:
         """Split text into semantically coherent chunks.
@@ -1194,7 +1191,7 @@ class SemanticChunker(_WithFallback, Chunker):
             return self._semantic_split(sentences, separator=" ")
 
         # If we have very few segments, use fallback
-        return self._fallback_chunk(text)
+        return self._fallback_chunker.chunk(text)
 
     def _semantic_split(self, segments: list[str], separator: str) -> list[str]:
         """Perform semantic splitting on segments.
@@ -1210,7 +1207,7 @@ class SemanticChunker(_WithFallback, Chunker):
             embeddings = self._compute_embeddings(segments)
         except Exception as e:
             logger.warning(f"Embedding error, falling back to recursive: {e}")
-            return self._fallback_chunk(separator.join(segments))
+            return self._fallback_chunker.chunk(separator.join(segments))
 
         # Find split points at similarity threshold
         split_points = self._find_split_points(embeddings, self.similarity_threshold)
@@ -1222,7 +1219,7 @@ class SemanticChunker(_WithFallback, Chunker):
 
         # If still no split points (uniform similarity), use fallback
         if not split_points:
-            return self._fallback_chunk(separator.join(segments))
+            return self._fallback_chunker.chunk(separator.join(segments))
 
         # Merge segments between split points
         chunks = self._merge_segments(segments, split_points, separator)
