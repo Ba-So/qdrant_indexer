@@ -348,7 +348,17 @@ class RustCodeLoader(TreeSitterCodeLoader):
                         is_const = True
 
         # Build signature
-        signature = self._build_function_signature(node, content_bytes, visibility, is_async, is_unsafe, is_const)
+        type_params_node = node.child_by_field_name("type_parameters")
+        type_params_text = self._get_node_text(type_params_node, content_bytes) if type_params_node else None
+        signature = self._build_function_signature(
+            node, content_bytes,
+            name=cf.name,
+            type_params_text=type_params_text,
+            visibility=visibility,
+            is_async=is_async,
+            is_unsafe=is_unsafe,
+            is_const=is_const,
+        )
 
         qualified_name = f"{parent_name}.{name}" if parent_name else name
         symbol_type = "method" if parent_name else "function"
@@ -377,13 +387,23 @@ class RustCodeLoader(TreeSitterCodeLoader):
         )
 
     def _build_function_signature(
-        self, node, content_bytes: bytes, visibility: str, is_async: bool, is_unsafe: bool, is_const: bool
+        self,
+        node,
+        content_bytes: bytes,
+        name: str,
+        type_params_text: str | None,
+        visibility: str,
+        is_async: bool,
+        is_unsafe: bool,
+        is_const: bool,
     ) -> str:
         """Build function signature string.
 
         Args:
             node: Function item node.
             content_bytes: Source code as bytes.
+            name: Function name (pre-extracted from the node).
+            type_params_text: Type parameters text (pre-extracted), or None.
             visibility: Visibility modifier.
             is_async: Whether function is async.
             is_unsafe: Whether function is unsafe.
@@ -404,14 +424,11 @@ class RustCodeLoader(TreeSitterCodeLoader):
             parts.append("unsafe")
         parts.append("fn")
 
-        name_node = node.child_by_field_name("name")
-        name = self._get_node_text(name_node, content_bytes) or "unknown"
         parts.append(name)
 
         # Add type parameters
-        type_params = node.child_by_field_name("type_parameters")
-        if type_params:
-            parts[-1] += self._get_node_text(type_params, content_bytes)
+        if type_params_text:
+            parts[-1] += type_params_text
 
         # Add parameters
         params_node = node.child_by_field_name("parameters")
