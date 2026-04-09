@@ -1,5 +1,8 @@
 """Shared base class for tree-sitter-based code loaders."""
 
+from abc import abstractmethod
+from pathlib import Path
+
 from tree_sitter import Parser
 
 from qdrant_indexer.models import CodeSymbol
@@ -11,6 +14,8 @@ class TreeSitterCodeLoader(CodeLoader):
     """Intermediate base for code loaders that use tree-sitter parsing.
 
     Provides utilities shared by all tree-sitter loaders:
+      - extract_symbols: template method that encodes, parses, and walks the AST
+      - _walk_node: abstract hook that subclasses implement for language-specific traversal
       - _get_node_text: extract raw text for any AST node
       - _clean_block_comment: normalize /** ... */ and /*! ... */ block doc comments
 
@@ -19,6 +24,25 @@ class TreeSitterCodeLoader(CodeLoader):
     """
 
     _parser: Parser
+
+    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:
+        """Template: encode, parse, walk. Subclasses implement _walk_node."""
+        content_bytes = content.encode("utf-8")
+        tree = self._parser.parse(content_bytes)
+        symbols: list[CodeSymbol] = []
+        self._walk_node(tree.root_node, content_bytes, symbols, None)
+        return symbols
+
+    @abstractmethod
+    def _walk_node(
+        self,
+        node,
+        content_bytes: bytes,
+        symbols: list[CodeSymbol],
+        parent_name: str | None,
+    ) -> None:
+        """Recursively walk AST nodes; subclasses control recursion strategy."""
+        ...
 
     def _get_node_text(self, node, content_bytes: bytes) -> str:
         """Get text content of a tree-sitter node.

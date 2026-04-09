@@ -1,5 +1,6 @@
 """State management for incremental indexing."""
 
+import dataclasses
 import hashlib
 import json
 from pathlib import Path
@@ -35,16 +36,7 @@ class IndexState:
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "files": {
-                path: {
-                    "path": state.path,
-                    "content_hash": state.content_hash,
-                    "indexed_at": state.indexed_at,
-                    "chunk_count": state.chunk_count,
-                    "chunk_ids": state.chunk_ids,
-                    "mtime": state.mtime,
-                    "image_count": state.image_count,
-                    "image_ids": state.image_ids,
-                }
+                path: dataclasses.asdict(state)
                 for path, state in self.files.items()
             }
         }

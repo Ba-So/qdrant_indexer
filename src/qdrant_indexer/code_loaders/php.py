@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Callable
-from pathlib import Path
 
 import tree_sitter_php
 from tree_sitter import Language, Parser
@@ -25,25 +24,6 @@ class PHPCodeLoader(TreeSitterCodeLoader):
         """Initialize the PHP parser with tree-sitter."""
         self._php_lang = Language(tree_sitter_php.language_php())
         self._parser = Parser(self._php_lang)
-
-    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:
-        """Extract symbols using tree-sitter PHP parser.
-
-        Args:
-            content: PHP source code as string.
-            file_path: Path to source file for error reporting.
-
-        Returns:
-            List of extracted CodeSymbol objects.
-        """
-        content_bytes = content.encode("utf-8")
-        tree = self._parser.parse(content_bytes)
-        symbols: list[CodeSymbol] = []
-
-        # Walk the tree to find symbols
-        self._walk_node(tree.root_node, content_bytes, symbols, None)
-
-        return symbols
 
     def _walk_node(
         self,
