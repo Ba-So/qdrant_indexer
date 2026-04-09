@@ -1,7 +1,6 @@
 """Rust source code loader using tree-sitter parsing."""
 
 import logging
-from pathlib import Path
 from typing import NamedTuple
 
 import tree_sitter_rust
@@ -39,25 +38,6 @@ class RustCodeLoader(TreeSitterCodeLoader):
         """Initialize the Rust parser with tree-sitter."""
         self._rust_lang = Language(tree_sitter_rust.language())
         self._parser = Parser(self._rust_lang)
-
-    def extract_symbols(self, content: str, file_path: Path) -> list[CodeSymbol]:
-        """Extract symbols using tree-sitter Rust parser.
-
-        Args:
-            content: Rust source code as string.
-            file_path: Path to source file for error reporting.
-
-        Returns:
-            List of extracted CodeSymbol objects.
-        """
-        content_bytes = content.encode("utf-8")
-        tree = self._parser.parse(content_bytes)
-        symbols: list[CodeSymbol] = []
-
-        # Walk the tree to find symbols
-        self._walk_node(tree.root_node, content_bytes, symbols, None)
-
-        return symbols
 
     def _walk_node(
         self,
