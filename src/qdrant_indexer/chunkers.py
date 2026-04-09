@@ -948,7 +948,7 @@ class HTMLChunker(_WithFallback, Chunker):
         return chunks
 
 
-class SemanticChunker(Chunker):
+class SemanticChunker(_WithFallback, Chunker):
     """Semantic chunker that splits text based on embedding similarity.
 
     Uses fastembed embeddings to compute semantic similarity between text
@@ -981,6 +981,7 @@ class SemanticChunker(Chunker):
         self.min_chunk_size = min_chunk_size
         self.similarity_threshold = similarity_threshold
         self.embedding_model = embedding_model
+        self.overlap = 0  # semantic split points are already meaningful; no overlap needed
 
     @classmethod
     def _get_model(cls, model_name: str) -> TextEmbedding:
@@ -1151,15 +1152,7 @@ class SemanticChunker(Chunker):
         return final_result
 
     def _fallback_chunk(self, text: str) -> list[str]:
-        """Fall back to RecursiveChunker for text.
-
-        Args:
-            text: Text to chunk.
-
-        Returns:
-            List of chunks from RecursiveChunker.
-        """
-        return RecursiveChunker(self.chunk_size, overlap=0).chunk(text)
+        return self._fallback_chunker.chunk(text)
 
     def chunk(self, text: str) -> list[str]:
         """Split text into semantically coherent chunks.
