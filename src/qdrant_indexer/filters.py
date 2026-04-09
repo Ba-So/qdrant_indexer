@@ -55,18 +55,23 @@ def should_exclude(file_path: Path, base_path: Path, exclude_patterns: list[str]
     rel_str = str(rel_path)
 
     for pattern in exclude_patterns:
-        # Check if any part of the path matches
+        # Strategy 1: match the full relative path against the pattern (e.g. "dist/bundle.js"
+        # against "dist/**", or "*.pyc" against a bare extension glob).
         if fnmatch.fnmatch(rel_str, pattern):
             logger.debug(f"Excluding {rel_str}: matches pattern '{pattern}'")
             return True
 
-        # Also check individual path components
+        # Strategy 2: match each individual path component against the pattern.
+        # This handles bare directory names like "__pycache__" or "node_modules" that
+        # appear anywhere in the tree without needing a "/**" suffix in the pattern.
         for part in rel_path.parts:
             if fnmatch.fnmatch(part, pattern):
                 logger.debug(f"Excluding {rel_str}: component '{part}' matches pattern '{pattern}'")
                 return True
 
-        # Check if any parent directory matches (for patterns like "node_modules/**")
+        # Strategy 3: for "dir/**" patterns, match any parent directory segment against
+        # the "dir" prefix so that all descendants of a directory are excluded even when
+        # the full relative path is not long enough to match the wildcard portion.
         if pattern.endswith("/**"):
             dir_pattern = pattern[:-3]
             for part in rel_path.parts[:-1]:  # Exclude the filename itself
@@ -77,7 +82,7 @@ def should_exclude(file_path: Path, base_path: Path, exclude_patterns: list[str]
     return False
 
 
-def _glob_and_dedup(directory: Path, patterns: list[str]) -> list[Path]:
+def glob_and_dedup(directory: Path, patterns: list[str]) -> list[Path]:
     """Glob *patterns* under *directory* and deduplicate via resolved paths."""
     all_files: list[Path] = []
     seen: set[Path] = set()
@@ -113,7 +118,7 @@ def discover_files(
     Returns:
         Deduplicated, filtered list of matching file paths.
     """
-    all_files = _glob_and_dedup(directory, patterns)
+    all_files = glob_and_dedup(directory, patterns)
     included, _ = filter_files(all_files, directory, exclude_patterns, use_defaults=False)
     return included
 
