@@ -191,6 +191,95 @@ def _indexing_progress(console: Console, quiet: bool) -> Progress:
     )
 
 
+def _run_incremental(
+    indexer: "QdrantIndexer",
+    path: Path,
+    pattern: list[str],
+    chunker,
+    batch_size: int,
+    exclude_patterns: list[str],
+    state_file: Optional[Path],
+    chunk_size: int,
+    chunk_overlap: int,
+    console: Console,
+    quiet: bool,
+    clip_model: str,
+    images: bool,
+    chunker_strategy: str,
+) -> SyncResult:
+    """Run incremental (sync) indexing and return the result."""
+    if not quiet:
+        mode_msg = (
+            "[cyan]incremental[/cyan]"
+            if not state_file
+            else f"[cyan]incremental[/cyan] (state: {state_file})"
+        )
+        console.print(f"Mode: {mode_msg}")
+        console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
+        if images:
+            console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
+
+    with _indexing_progress(console, quiet) as progress:
+        task = progress.add_task("Discovering files...", total=None)
+        result = indexer.sync_directory(
+            path=path,
+            patterns=pattern,
+            chunker=chunker,
+            batch_size=batch_size,
+            exclude_patterns=exclude_patterns if exclude_patterns else None,
+            state_file=state_file,
+            force=False,
+            on_progress=_make_progress_callback(progress, task),
+            chunk_size=chunk_size,
+            overlap=chunk_overlap,
+        )
+        progress.update(task, description="Complete")
+
+    return result
+
+
+def _run_full(
+    indexer: "QdrantIndexer",
+    path: Path,
+    pattern: list[str],
+    chunker,
+    batch_size: int,
+    exclude_patterns: list[str],
+    chunk_size: int,
+    chunk_overlap: int,
+    console: Console,
+    quiet: bool,
+    clip_model: str,
+    images: bool,
+    workers: int,
+    embedding_batch_size: int,
+    chunker_strategy: str,
+) -> IndexResult:
+    """Run full re-index and return the result."""
+    if not quiet:
+        console.print(f"Mode: [cyan]full re-index[/cyan]")
+        console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
+        console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
+        if images:
+            console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
+
+    with _indexing_progress(console, quiet) as progress:
+        task = progress.add_task("Discovering files...", total=None)
+        result = indexer.index_directory(
+            path=path,
+            patterns=pattern,
+            chunker=chunker,
+            batch_size=batch_size,
+            exclude_patterns=exclude_patterns if exclude_patterns else None,
+            on_progress=_make_progress_callback(progress, task),
+            workers=workers,
+            embedding_batch_size=embedding_batch_size,
+        )
+        progress.update(task, description="Complete", completed=result.total_chunks)
+
+    return result
+
+
 @app.command()
 def index(
     path: Annotated[Path, typer.Argument(help="Directory to index")],
@@ -417,55 +506,40 @@ def index(
             exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
 
         if incremental:
-            # Incremental mode: use sync_directory
-            if not quiet:
-                mode_msg = (
-                    "[cyan]incremental[/cyan]"
-                    if not state_file
-                    else f"[cyan]incremental[/cyan] (state: {state_file})"
-                )
-                console.print(f"Mode: {mode_msg}")
-                console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
-                if images:
-                    console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
-
-            with _indexing_progress(console, quiet) as progress:
-                task = progress.add_task("Discovering files...", total=None)
-                result = indexer.sync_directory(
-                    path=path,
-                    patterns=pattern,
-                    chunker=chunker,
-                    batch_size=batch_size,
-                    exclude_patterns=exclude_patterns if exclude_patterns else None,
-                    state_file=state_file,
-                    force=False,
-                    on_progress=_make_progress_callback(progress, task),
-                    chunk_size=chunk_size,
-                    overlap=chunk_overlap,
-                )
-                progress.update(task, description="Complete")
+            result = _run_incremental(
+                indexer=indexer,
+                path=path,
+                pattern=pattern,
+                chunker=chunker,
+                batch_size=batch_size,
+                exclude_patterns=exclude_patterns,
+                state_file=state_file,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                console=console,
+                quiet=quiet,
+                clip_model=clip_model,
+                images=images,
+                chunker_strategy=chunker_strategy,
+            )
         else:
-            # Full mode: use index_directory
-            if not quiet:
-                console.print(f"Mode: [cyan]full re-index[/cyan]")
-                console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
-                console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
-                if images:
-                    console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
-
-            with _indexing_progress(console, quiet) as progress:
-                task = progress.add_task("Discovering files...", total=None)
-                result = indexer.index_directory(
-                    path=path,
-                    patterns=pattern,
-                    chunker=chunker,
-                    batch_size=batch_size,
-                    exclude_patterns=exclude_patterns if exclude_patterns else None,
-                    on_progress=_make_progress_callback(progress, task),
-                    workers=workers,
-                    embedding_batch_size=embedding_batch_size,
-                )
-                progress.update(task, description="Complete", completed=result.total_chunks)
+            result = _run_full(
+                indexer=indexer,
+                path=path,
+                pattern=pattern,
+                chunker=chunker,
+                batch_size=batch_size,
+                exclude_patterns=exclude_patterns,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                console=console,
+                quiet=quiet,
+                clip_model=clip_model,
+                images=images,
+                workers=workers,
+                embedding_batch_size=embedding_batch_size,
+                chunker_strategy=chunker_strategy,
+            )
 
         elapsed = time.time() - start_time
 
