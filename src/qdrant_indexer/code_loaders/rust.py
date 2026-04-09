@@ -426,6 +426,39 @@ class RustCodeLoader(TreeSitterCodeLoader):
 
         return " ".join(parts)
 
+    def _build_signature(
+        self,
+        visibility: str,
+        keyword: str,
+        name: str,
+        type_params_node,
+        content_bytes: bytes,
+    ) -> str:
+        """Build a base signature from visibility, keyword, name, and optional type parameters.
+
+        This consolidates the sig_parts assembly pattern shared across struct, enum,
+        trait, type alias, and module extractors. Callers may extend the returned
+        signature with method-specific suffixes after this call.
+
+        Args:
+            visibility: Visibility modifier (e.g. 'pub', 'pub(crate)', or 'private').
+            keyword: Rust keyword for the item (e.g. 'struct', 'enum', 'trait').
+            name: Item identifier.
+            type_params_node: Tree-sitter node for type parameters, or None.
+            content_bytes: Full source file encoded as UTF-8.
+
+        Returns:
+            Signature string of the form '[visibility] keyword name[<T, U>]'.
+        """
+        parts: list[str] = []
+        if visibility != "private":
+            parts.append(visibility)
+        parts.append(keyword)
+        parts.append(name)
+        if type_params_node is not None:
+            parts[-1] += self._get_node_text(type_params_node, content_bytes)
+        return " ".join(parts)
+
     def _extract_struct(self, node, content_bytes: bytes) -> CodeSymbol:
         """Extract struct symbol.
 
@@ -444,17 +477,8 @@ class RustCodeLoader(TreeSitterCodeLoader):
         derives = self._parse_derives(attributes)
 
         # Build signature
-        sig_parts = []
-        if visibility != "private":
-            sig_parts.append(visibility)
-        sig_parts.append("struct")
-        sig_parts.append(name)
-
         type_params = node.child_by_field_name("type_parameters")
-        if type_params:
-            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
-
-        signature = " ".join(sig_parts)
+        signature = self._build_signature(visibility, "struct", name, type_params, content_bytes)
 
         return CodeSymbol(
             name=name,
@@ -504,17 +528,8 @@ class RustCodeLoader(TreeSitterCodeLoader):
                         variants.append(self._get_node_text(variant_name, content_bytes))
 
         # Build signature
-        sig_parts = []
-        if visibility != "private":
-            sig_parts.append(visibility)
-        sig_parts.append("enum")
-        sig_parts.append(name)
-
         type_params = node.child_by_field_name("type_parameters")
-        if type_params:
-            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
-
-        signature = " ".join(sig_parts)
+        signature = self._build_signature(visibility, "enum", name, type_params, content_bytes)
 
         return CodeSymbol(
             name=name,
@@ -560,21 +575,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
             supertraits.append(self._get_node_text(bounds, content_bytes))
 
         # Build signature
-        sig_parts = []
-        if visibility != "private":
-            sig_parts.append(visibility)
-        sig_parts.append("trait")
-        sig_parts.append(name)
-
         type_params = node.child_by_field_name("type_parameters")
-        if type_params:
-            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
-
+        base = self._build_signature(visibility, "trait", name, type_params, content_bytes)
         if supertraits:
-            sig_parts.append(":")
-            sig_parts.append(" + ".join(supertraits))
-
-        signature = " ".join(sig_parts)
+            signature = base + " : " + " + ".join(supertraits)
+        else:
+            signature = base
 
         return CodeSymbol(
             name=name,
@@ -725,21 +731,12 @@ class RustCodeLoader(TreeSitterCodeLoader):
         aliased_type = self._get_node_text(type_node, content_bytes) if type_node else None
 
         # Build signature
-        sig_parts = []
-        if visibility != "private":
-            sig_parts.append(visibility)
-        sig_parts.append("type")
-        sig_parts.append(name)
-
         type_params = node.child_by_field_name("type_parameters")
-        if type_params:
-            sig_parts[-1] += self._get_node_text(type_params, content_bytes)
-
+        base = self._build_signature(visibility, "type", name, type_params, content_bytes)
         if aliased_type:
-            sig_parts.append("=")
-            sig_parts.append(aliased_type)
-
-        signature = " ".join(sig_parts)
+            signature = base + " = " + aliased_type
+        else:
+            signature = base
 
         return CodeSymbol(
             name=name,
@@ -931,14 +928,8 @@ class RustCodeLoader(TreeSitterCodeLoader):
             cf.name, cf.source, cf.docstring, cf.visibility, cf.attributes
         )
 
-        # Build signature
-        sig_parts = []
-        if visibility != "private":
-            sig_parts.append(visibility)
-        sig_parts.append("mod")
-        sig_parts.append(name)
-
-        signature = " ".join(sig_parts)
+        # Build signature (modules have no type parameters)
+        signature = self._build_signature(visibility, "mod", name, None, content_bytes)
 
         return CodeSymbol(
             name=name,
