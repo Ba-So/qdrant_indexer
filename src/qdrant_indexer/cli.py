@@ -593,22 +593,26 @@ def _delete_file_entries(
     file_entries: dict[str, IndexedFileState],
     quiet: bool,
     console: Console,
-) -> tuple[int, list[str]]:
-    """Delete Qdrant points for each file entry. Returns (total_deleted, failed)."""
+) -> tuple[int, set[str]]:
+    """Delete Qdrant points for each file entry. Returns (total_deleted, failed_paths).
+
+    failed_paths contains the raw file_path_str keys for entries that could not be
+    deleted, so callers can skip them when updating state without parsing error strings.
+    """
     total_deleted = 0
-    failed: list[str] = []
+    failed_paths: set[str] = set()
     for file_path_str, file_state in file_entries.items():
         try:
             all_ids = file_state.chunk_ids + file_state.image_ids
             indexer.delete_points_by_ids(all_ids)
             total_deleted += len(all_ids)
         except Exception as e:
-            failed.append(f"{file_path_str}: {e}")
+            failed_paths.add(file_path_str)
             if not quiet:
                 console.print(
                     f"[red]Error removing {Path(file_path_str).name}: {e}[/red]"
                 )
-    return total_deleted, failed
+    return total_deleted, failed_paths
 
 
 @app.command()
@@ -681,7 +685,7 @@ def clean(
                     abort=True,
                 )
 
-            total_deleted, failed = _delete_file_entries(
+            total_deleted, failed_paths = _delete_file_entries(
                 indexer, state.files, quiet, console
             )
 
@@ -689,9 +693,9 @@ def clean(
             state_file.unlink()
 
             if not quiet:
-                if failed:
+                if failed_paths:
                     console.print(
-                        f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]"
+                        f"\n[yellow]Failed to remove {len(failed_paths)} file(s)[/yellow]"
                     )
                 display_success(
                     f"Removed {total_deleted} points and deleted state file"
@@ -718,12 +722,9 @@ def clean(
             file_entries = {
                 fp: state.files[fp] for fp in deleted_files if fp in state.files
             }
-            total_deleted, failed = _delete_file_entries(
+            total_deleted, failed_paths = _delete_file_entries(
                 indexer, file_entries, quiet, console
             )
-            failed_paths = {
-                fp for fp in file_entries if any(f.startswith(fp + ": ") for f in failed)
-            }
             for file_path_str in file_entries:
                 if file_path_str not in failed_paths:
                     state.remove_file(Path(file_path_str))
@@ -731,9 +732,9 @@ def clean(
             state.save()
 
             if not quiet:
-                if failed:
+                if failed_paths:
                     console.print(
-                        f"\n[yellow]Failed to remove {len(failed)} file(s)[/yellow]"
+                        f"\n[yellow]Failed to remove {len(failed_paths)} file(s)[/yellow]"
                     )
                 display_success(
                     f"Removed {total_deleted} points from {len(deleted_files)} deleted files"
