@@ -142,6 +142,31 @@ class _CliState:
     quiet: bool = False
 
 
+@dataclass(frozen=True)
+class _IndexConfig:
+    indexer: "QdrantIndexer"
+    path: Path
+    pattern: list[str]
+    chunker: object  # Chunker | None
+    batch_size: int
+    exclude_patterns: list[str]
+    console: Console
+    quiet: bool
+    clip_model: str
+    images: bool
+    chunker_strategy: str
+
+
+def _build_exclude_patterns(
+    exclude: tuple[str, ...] | None,
+    no_default_excludes: bool,
+) -> list[str]:
+    patterns = list(exclude) if exclude else []
+    if not no_default_excludes:
+        patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
+    return patterns
+
+
 _state = _CliState()
 
 
@@ -191,41 +216,31 @@ def _indexing_progress(console: Console, quiet: bool) -> Progress:
 
 
 def _run_incremental(
-    indexer: "QdrantIndexer",
-    path: Path,
-    pattern: list[str],
-    chunker,
-    batch_size: int,
-    exclude_patterns: list[str],
+    config: _IndexConfig,
     state_file: Optional[Path],
     chunk_size: int,
     chunk_overlap: int,
-    console: Console,
-    quiet: bool,
-    clip_model: str,
-    images: bool,
-    chunker_strategy: str,
 ) -> SyncResult:
     """Run incremental (sync) indexing and return the result."""
-    if not quiet:
+    if not config.quiet:
         mode_msg = (
             "[cyan]incremental[/cyan]"
             if not state_file
             else f"[cyan]incremental[/cyan] (state: {state_file})"
         )
-        console.print(f"Mode: {mode_msg}")
-        console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
-        if images:
-            console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
+        config.console.print(f"Mode: {mode_msg}")
+        config.console.print(f"Chunker: [cyan]{config.chunker_strategy}[/cyan]")
+        if config.images:
+            config.console.print(f"Image embeddings: [cyan]enabled[/cyan] ({config.clip_model})")
 
-    with _indexing_progress(console, quiet) as progress:
+    with _indexing_progress(config.console, config.quiet) as progress:
         task = progress.add_task("Discovering files...", total=None)
-        result = indexer.sync_directory(
-            path=path,
-            patterns=pattern,
-            chunker=chunker,
-            batch_size=batch_size,
-            exclude_patterns=exclude_patterns if exclude_patterns else None,
+        result = config.indexer.sync_directory(
+            path=config.path,
+            patterns=config.pattern,
+            chunker=config.chunker,
+            batch_size=config.batch_size,
+            exclude_patterns=config.exclude_patterns if config.exclude_patterns else None,
             state_file=state_file,
             force=False,
             on_progress=_make_progress_callback(progress, task),
@@ -238,36 +253,26 @@ def _run_incremental(
 
 
 def _run_full(
-    indexer: "QdrantIndexer",
-    path: Path,
-    pattern: list[str],
-    chunker,
-    batch_size: int,
-    exclude_patterns: list[str],
-    console: Console,
-    quiet: bool,
-    clip_model: str,
-    images: bool,
+    config: _IndexConfig,
     workers: int,
     embedding_batch_size: int,
-    chunker_strategy: str,
 ) -> IndexResult:
     """Run full re-index and return the result."""
-    if not quiet:
-        console.print(f"Mode: [cyan]full re-index[/cyan]")
-        console.print(f"Chunker: [cyan]{chunker_strategy}[/cyan]")
-        console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
-        if images:
-            console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
+    if not config.quiet:
+        config.console.print(f"Mode: [cyan]full re-index[/cyan]")
+        config.console.print(f"Chunker: [cyan]{config.chunker_strategy}[/cyan]")
+        config.console.print(f"Using [cyan]{workers}[/cyan] parallel workers")
+        if config.images:
+            config.console.print(f"Image embeddings: [cyan]enabled[/cyan] ({config.clip_model})")
 
-    with _indexing_progress(console, quiet) as progress:
+    with _indexing_progress(config.console, config.quiet) as progress:
         task = progress.add_task("Discovering files...", total=None)
-        result = indexer.index_directory(
-            path=path,
-            patterns=pattern,
-            chunker=chunker,
-            batch_size=batch_size,
-            exclude_patterns=exclude_patterns if exclude_patterns else None,
+        result = config.indexer.index_directory(
+            path=config.path,
+            patterns=config.pattern,
+            chunker=config.chunker,
+            batch_size=config.batch_size,
+            exclude_patterns=config.exclude_patterns if config.exclude_patterns else None,
             on_progress=_make_progress_callback(progress, task),
             workers=workers,
             embedding_batch_size=embedding_batch_size,
@@ -497,44 +502,19 @@ def index(
                 overlap=chunk_overlap,
             )
 
-        # Build exclude patterns list
-        exclude_patterns = list(exclude) if exclude else []
-        if not no_default_excludes:
-            exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
+        # Build exclude patterns list and bundle shared params into config
+        exclude_patterns = _build_exclude_patterns(exclude, no_default_excludes)
 
+        cfg = _IndexConfig(
+            indexer=indexer, path=path, pattern=pattern, chunker=chunker,
+            batch_size=batch_size, exclude_patterns=exclude_patterns,
+            console=console, quiet=quiet, clip_model=clip_model,
+            images=images, chunker_strategy=chunker_strategy,
+        )
         if incremental:
-            result = _run_incremental(
-                indexer=indexer,
-                path=path,
-                pattern=pattern,
-                chunker=chunker,
-                batch_size=batch_size,
-                exclude_patterns=exclude_patterns,
-                state_file=state_file,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                console=console,
-                quiet=quiet,
-                clip_model=clip_model,
-                images=images,
-                chunker_strategy=chunker_strategy,
-            )
+            result = _run_incremental(cfg, state_file, chunk_size, chunk_overlap)
         else:
-            result = _run_full(
-                indexer=indexer,
-                path=path,
-                pattern=pattern,
-                chunker=chunker,
-                batch_size=batch_size,
-                exclude_patterns=exclude_patterns,
-                console=console,
-                quiet=quiet,
-                clip_model=clip_model,
-                images=images,
-                workers=workers,
-                embedding_batch_size=embedding_batch_size,
-                chunker_strategy=chunker_strategy,
-            )
+            result = _run_full(cfg, workers, embedding_batch_size)
 
         elapsed = time.time() - start_time
 
@@ -595,9 +575,7 @@ def status(
     state.load()
 
     # Build exclude patterns list
-    exclude_patterns = list(exclude) if exclude else []
-    if not no_default_excludes:
-        exclude_patterns.extend(DEFAULT_EXCLUDE_PATTERNS)
+    exclude_patterns = _build_exclude_patterns(exclude, no_default_excludes)
 
     # Discover current files
     files = discover_files(path, pattern, exclude_patterns)
