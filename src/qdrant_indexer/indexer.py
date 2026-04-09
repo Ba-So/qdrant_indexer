@@ -25,6 +25,7 @@ from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_f
 from qdrant_indexer.filters import DEFAULT_INDEX_PATTERNS, glob_and_dedup, filter_files
 from qdrant_indexer.loaders import get_loader
 from qdrant_indexer.models import CodeSymbol, ExtractedImage, IndexedFileState, IndexResult, ProgressEvent, SyncResult
+from qdrant_indexer.payloads import generate_point_id, base_metadata, build_payload, build_code_payload, generate_image_point_id, build_image_payload
 from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
@@ -653,9 +654,9 @@ class QdrantIndexer:
 
         all_points: list[PointStruct] = []
         for i, (chunk, vector) in enumerate(zip(chunks, embeddings)):
-            point_id = self._generate_point_id(file_path, i)
+            point_id = generate_point_id(file_path, i)
             point_ids.append(point_id)
-            payload = self._build_payload(
+            payload = build_payload(
                 chunk=chunk,
                 file_path=file_path,
                 chunk_index=i,
@@ -737,9 +738,9 @@ class QdrantIndexer:
         for i, ((chunk_text, symbol), vector) in enumerate(
             zip(chunks_with_symbols, embeddings)
         ):
-            point_id = self._generate_point_id(file_path, i)
+            point_id = generate_point_id(file_path, i)
             point_ids.append(point_id)
-            payload = self._build_code_payload(
+            payload = build_code_payload(
                 chunk=chunk_text,
                 symbol=symbol,
                 file_path=file_path,
@@ -1094,10 +1095,10 @@ class QdrantIndexer:
 
         all_points: list[PointStruct] = []
         for i, (chunk, vector) in enumerate(zip(all_chunks, embeddings)):
-            point_id = self._generate_point_id(chunk.file_path, chunk.chunk_index)
+            point_id = generate_point_id(chunk.file_path, chunk.chunk_index)
 
             if chunk.symbol:
-                payload = self._build_code_payload(
+                payload = build_code_payload(
                     chunk=chunk.text,
                     symbol=chunk.symbol,
                     file_path=chunk.file_path,
@@ -1106,7 +1107,7 @@ class QdrantIndexer:
                     metadata=chunk.metadata,
                 )
             else:
-                payload = self._build_payload(
+                payload = build_payload(
                     chunk=chunk.text,
                     file_path=chunk.file_path,
                     chunk_index=chunk.chunk_index,
@@ -1447,186 +1448,6 @@ class QdrantIndexer:
             failed=failed,
         )
 
-    def _generate_point_id(self, file_path: Path, chunk_index: int) -> int:
-        """Generate a stable point ID from file path and chunk index.
-
-        Args:
-            file_path: Path to the source file.
-            chunk_index: Index of the chunk within the file.
-
-        Returns:
-            Positive int64 ID.
-        """
-        key = f"{file_path.absolute()}-{chunk_index}"
-        hash_obj = hashlib.sha256(key.encode())
-        # Convert first 8 bytes to int64 and ensure positive
-        return int.from_bytes(hash_obj.digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
-
-    def _base_metadata(
-        self,
-        file_path: Path,
-        metadata: dict,
-        chunk_index: int | None = None,
-        total_chunks: int | None = None,
-    ) -> dict:
-        """Build shared metadata dict, always excluding 'symbols'.
-
-        chunk_index and total_chunks are only included when provided; image
-        payloads omit them to avoid polluting the image schema with text-chunk
-        fields.
-        """
-        base: dict = {
-            "source": str(file_path.absolute()),
-            "timestamp": datetime.now().isoformat(),
-        }
-        if chunk_index is not None:
-            base["chunk_index"] = chunk_index
-        if total_chunks is not None:
-            base["total_chunks"] = total_chunks
-        for key, value in metadata.items():
-            if key != "symbols":
-                base[key] = value
-        return base
-
-    def _build_payload(
-        self,
-        chunk: str,
-        file_path: Path,
-        chunk_index: int,
-        total_chunks: int,
-        metadata: dict,
-    ) -> dict:
-        """Build the payload dict for a Qdrant point.
-
-        Args:
-            chunk: The text content of the chunk.
-            file_path: Path to the source file.
-            chunk_index: Index of this chunk.
-            total_chunks: Total number of chunks from the source.
-            metadata: Additional metadata from the document loader.
-
-        Returns:
-            Payload dict with all fields.
-        """
-        return {
-            "document": chunk,  # Field name required by qdrant-mcp
-            "metadata": self._base_metadata(
-                file_path, metadata, chunk_index=chunk_index, total_chunks=total_chunks
-            ),
-        }
-
-    def _build_code_payload(
-        self,
-        chunk: str,
-        symbol: CodeSymbol,
-        file_path: Path,
-        chunk_index: int,
-        total_chunks: int,
-        metadata: dict,
-    ) -> dict:
-        """Build the payload dict for a code symbol point.
-
-        Args:
-            chunk: The text content of the chunk.
-            symbol: The code symbol this chunk represents.
-            file_path: Path to the source file.
-            chunk_index: Index of this chunk.
-            total_chunks: Total number of chunks from the source.
-            metadata: Additional metadata from the document loader.
-
-        Returns:
-            Payload dict with all fields including code-specific metadata.
-        """
-        nested_metadata = self._base_metadata(
-            file_path, metadata, chunk_index=chunk_index, total_chunks=total_chunks
-        )
-        # Code-specific metadata
-        nested_metadata.update(
-            {
-                "language": symbol.language,
-                "symbol_type": symbol.symbol_type,
-                "symbol_name": symbol.name,
-                "symbol_qualified_name": symbol.qualified_name,
-                "signature": symbol.signature or "",
-                "docstring": symbol.docstring or "",
-                "line_start": symbol.line_start,
-                "line_end": symbol.line_end,
-                "parent_class": symbol.parent or "",
-                "visibility": symbol.visibility or "",
-            }
-        )
-
-        return {
-            "document": chunk,  # Field name required by qdrant-mcp
-            "metadata": nested_metadata,
-        }
-
-    def _generate_image_point_id(self, file_path: Path, image_index: int) -> int:
-        """Generate a stable point ID for an image.
-
-        Uses a different namespace than text chunks to avoid collisions.
-
-        Args:
-            file_path: Path to the source file.
-            image_index: Index of the image within the file.
-
-        Returns:
-            Positive int64 ID.
-        """
-        key = f"image:{file_path.absolute()}-{image_index}"
-        hash_obj = hashlib.sha256(key.encode())
-        return int.from_bytes(hash_obj.digest()[:8], "big") & 0x7FFFFFFFFFFFFFFF
-
-    def _build_image_payload(
-        self,
-        image: ExtractedImage,
-        file_path: Path,
-        image_index: int,
-        total_images: int,
-        metadata: dict,
-    ) -> dict:
-        """Build the payload dict for an image point.
-
-        Args:
-            image: ExtractedImage object with image data and context.
-            file_path: Path to the source file.
-            image_index: Index of this image.
-            total_images: Total number of images from the source.
-            metadata: Additional metadata from the document loader.
-
-        Returns:
-            Payload dict with all fields including image-specific metadata.
-        """
-        # Build document text from caption and surrounding text
-        doc_parts = []
-        if image.caption:
-            doc_parts.append(image.caption)
-        if image.surrounding_text:
-            doc_parts.append(image.surrounding_text)
-        document_text = " ".join(doc_parts) if doc_parts else ""
-
-        nested_metadata = self._base_metadata(file_path, metadata)
-        # Image-specific metadata
-        nested_metadata.update(
-            {
-                "content_type": "image",
-                "image_index": image_index,
-                "total_images": total_images,
-                "page_number": image.page_number,
-                "width": image.width,
-                "height": image.height,
-                "bbox": list(image.bbox),
-                "caption": image.caption or "",
-                "surrounding_text": image.surrounding_text or "",
-                "image_hash": image.image_hash or "",
-            }
-        )
-
-        return {
-            "document": document_text,
-            "metadata": nested_metadata,
-        }
-
     def _index_images(
         self,
         images: list[ExtractedImage],
@@ -1669,10 +1490,10 @@ class QdrantIndexer:
 
         all_points: list[PointStruct] = []
         for i, (image, vector) in enumerate(zip(images, embeddings)):
-            point_id = self._generate_image_point_id(file_path, i)
+            point_id = generate_image_point_id(file_path, i)
             point_ids.append(point_id)
 
-            payload = self._build_image_payload(
+            payload = build_image_payload(
                 image=image,
                 file_path=file_path,
                 image_index=i,
