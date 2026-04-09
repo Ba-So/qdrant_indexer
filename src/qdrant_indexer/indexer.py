@@ -878,23 +878,6 @@ class QdrantIndexer:
             logger.error(f"Failed to load {file_path}: {e}")
             return LoadedFile(file_path=file_path, chunks=[], error=str(e))
 
-    def _discover_files(
-        self,
-        path: Path,
-        patterns: list[str],
-        exclude_patterns: list[str] | None,
-    ) -> tuple[list[Path], list[Path]]:
-        """Glob for files matching patterns under path, deduplicate, then apply exclusions.
-
-        Delegates globbing and deduplication to :func:`glob_and_dedup` and
-        returns both included and skipped lists for caller logging.
-
-        Returns:
-            Tuple of (included_files, skipped_files).
-        """
-        all_files = glob_and_dedup(path, patterns)
-        return filter_files(all_files, path, exclude_patterns)
-
     def _load_files_parallel(
         self,
         files: list[Path],
@@ -1210,7 +1193,8 @@ class QdrantIndexer:
         # (handled in _load_and_chunk_file)
 
         # Phase 1: File discovery
-        files, skipped = self._discover_files(path, patterns, exclude_patterns)
+        all_files = glob_and_dedup(path, patterns)
+        files, skipped = filter_files(all_files, path, exclude_patterns)
         total_files_to_process = len(files)
 
         if skipped:
@@ -1316,7 +1300,8 @@ class QdrantIndexer:
         if patterns is None:
             patterns = DEFAULT_INDEX_PATTERNS
 
-        files, _ = self._discover_files(path, patterns, exclude_patterns)
+        all_files = glob_and_dedup(path, patterns)
+        files, _ = filter_files(all_files, path, exclude_patterns)
 
         # Report discovery complete
         if on_progress:
