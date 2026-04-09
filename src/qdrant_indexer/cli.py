@@ -178,6 +178,19 @@ def display_success(message: str) -> None:
         console.print(f"[green]✓[/green] {message}")
 
 
+def _indexing_progress(console: Console, quiet: bool) -> Progress:
+    """Create a consistent Progress bar for indexing commands."""
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        disable=quiet,
+    )
+
+
 @app.command()
 def index(
     path: Annotated[Path, typer.Argument(help="Directory to index")],
@@ -416,15 +429,7 @@ def index(
                 if images:
                     console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
 
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=console,
-                disable=quiet,
-            ) as progress:
+            with _indexing_progress(console, quiet) as progress:
                 task = progress.add_task("Discovering files...", total=None)
                 result = indexer.sync_directory(
                     path=path,
@@ -448,15 +453,7 @@ def index(
                 if images:
                     console.print(f"Image embeddings: [cyan]enabled[/cyan] ({clip_model})")
 
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=console,
-                disable=quiet,
-            ) as progress:
+            with _indexing_progress(console, quiet) as progress:
                 task = progress.add_task("Discovering files...", total=None)
                 result = indexer.index_directory(
                     path=path,
