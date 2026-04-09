@@ -478,19 +478,24 @@ class QdrantIndexer:
             Number of points deleted.
         """
         source = str(file_path.absolute())
-
-        # Query to count points before deletion
-        result = self.client.scroll(
-            collection_name=self.collection,
-            scroll_filter=Filter(
-                must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
-            ),
-            limit=10000,  # Reasonable limit
-            with_payload=False,
-            with_vectors=False,
+        scroll_filter = Filter(
+            must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
         )
-
-        point_ids = [point.id for point in result[0]]
+        point_ids: list[int] = []
+        offset = None
+        while True:
+            batch, next_offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=scroll_filter,
+                limit=1000,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            point_ids.extend(point.id for point in batch)
+            if next_offset is None:
+                break
+            offset = next_offset
 
         if point_ids:
             self.client.delete(
