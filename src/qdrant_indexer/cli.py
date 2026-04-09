@@ -89,7 +89,6 @@ def _make_progress_callback(progress, task):
 def _display_index_summary(
     console: Console,
     result: IndexResult | SyncResult,
-    incremental: bool,
     gpu: bool,
     indexer: "QdrantIndexer",
     workers: int,
@@ -100,14 +99,14 @@ def _display_index_summary(
     summary.add_column()
     summary.add_column()
 
-    if incremental:
+    if isinstance(result, SyncResult):
         summary.add_row("Files added:", f"[green]{result.added}[/green]")
         summary.add_row("Files updated:", f"[yellow]{result.updated}[/yellow]")
         summary.add_row("Files deleted:", f"[red]{result.deleted}[/red]")
         summary.add_row("Files unchanged:", f"[dim]{result.unchanged}[/dim]")
         if result.failed:
             summary.add_row("Files failed:", f"[red]{len(result.failed)}[/red]")
-    else:
+    else:  # IndexResult
         summary.add_row("Files indexed:", f"[cyan]{result.total_files}[/cyan]")
         summary.add_row("Chunks created:", f"[cyan]{result.total_chunks}[/cyan]")
         if result.skipped_files:
@@ -127,11 +126,11 @@ def _display_index_summary(
 
     console.print(Panel(summary, title="Indexing Complete", border_style="green"))
 
-    if incremental and result.failed:
+    if isinstance(result, SyncResult) and result.failed:
         console.print("\n[yellow]Failed files:[/yellow]")
         for failed in result.failed:
             console.print(f"  [red]•[/red] {failed}")
-    elif not incremental and result.failed_files:
+    elif isinstance(result, IndexResult) and result.failed_files:
         console.print("\n[yellow]Failed files:[/yellow]")
         for failed in result.failed_files:
             console.print(f"  [red]•[/red] {failed}")
@@ -540,7 +539,7 @@ def index(
         elapsed = time.time() - start_time
 
         if not quiet:
-            _display_index_summary(console, result, incremental, gpu, indexer, workers, elapsed)
+            _display_index_summary(console, result, gpu, indexer, workers, elapsed)
 
     except Exception as e:
         display_error(str(e))
