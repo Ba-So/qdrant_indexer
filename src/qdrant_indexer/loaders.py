@@ -596,6 +596,79 @@ class ReStructuredTextLoader(DocumentLoader):
         )
 
 
+class EpubLoader(DocumentLoader):
+    """Loader for EPUB e-book files.
+
+    Extracts text from all document items in the EPUB, joining chapters with
+    double newlines. Metadata is pulled from Dublin Core fields embedded in
+    the EPUB container.
+
+    Requires the ``ebooklib`` package (lazy-imported to avoid hard failure at
+    startup when it is not installed).
+    """
+
+    preferred_chunker: ClassVar[str] = "recursive"
+
+    def load(self, path: Path) -> Document:
+        """Load an EPUB file, extract metadata and full text content.
+
+        Args:
+            path: Path to the ``.epub`` file.
+
+        Returns:
+            Document with joined chapter text and Dublin Core metadata.
+        """
+        import ebooklib
+        import ebooklib.epub as epub
+        from bs4 import BeautifulSoup
+
+        book = epub.read_epub(str(path))
+
+        def _dc(field: str) -> list[str]:
+            return [v for v, _ in book.get_metadata("DC", field)]
+
+        title_vals = _dc("title")
+        author_vals = _dc("creator")
+        language_vals = _dc("language")
+        publisher_vals = _dc("publisher")
+        description_vals = _dc("description")
+        date_vals = _dc("date")
+        identifier_vals = _dc("identifier")
+
+        metadata: dict[str, str] = {
+            "filename": path.name,
+            "extension": path.suffix,
+        }
+        if title_vals:
+            metadata["title"] = title_vals[0]
+        if author_vals:
+            metadata["author"] = "; ".join(author_vals)
+        if language_vals:
+            metadata["language"] = language_vals[0]
+        if publisher_vals:
+            metadata["publisher"] = publisher_vals[0]
+        if description_vals:
+            metadata["description"] = description_vals[0]
+        if date_vals:
+            metadata["date"] = date_vals[0]
+        if identifier_vals:
+            metadata["identifier"] = identifier_vals[0]
+
+        chapters: list[str] = []
+        for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+            content = item.get_content()
+            soup = BeautifulSoup(content, "lxml")
+            text = soup.get_text(separator="\n", strip=True)
+            if text.strip():
+                chapters.append(text)
+
+        return Document(
+            content="\n\n".join(chapters),
+            source_path=path,
+            metadata=metadata,
+        )
+
+
 class HTMLLoader(DocumentLoader):
     """Loader for HTML files with content cleaning and metadata extraction.
 
@@ -796,6 +869,7 @@ LOADERS: dict[str, type[DocumentLoader]] = {
     ".rst": ReStructuredTextLoader,
     ".html": HTMLLoader,
     ".htm": HTMLLoader,
+    ".epub": EpubLoader,
 }
 
 # Code file extensions - loaded lazily

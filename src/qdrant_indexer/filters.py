@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 # Default glob patterns for files to include during indexing.
 # This is the single source of truth — import from here rather than duplicating.
 DEFAULT_INDEX_PATTERNS: list[str] = [
-    "**/*.md", "**/*.txt", "**/*.pdf", "**/*.rst",
+    "**/*.md", "**/*.txt", "**/*.pdf", "**/*.epub", "**/*.rst",
     "**/*.html", "**/*.htm",
     "**/*.py", "**/*.php",
     "**/*.rs",

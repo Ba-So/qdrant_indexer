@@ -7,6 +7,7 @@ import pytest
 from qdrant_indexer.loaders import (
     LOADERS,
     DocumentLoader,
+    EpubLoader,
     HTMLLoader,
     MarkdownLoader,
     PDFLoader,
@@ -195,6 +196,81 @@ class TestReStructuredTextLoader:
         assert doc.metadata["extension"] == ".rst"
 
 
+@pytest.fixture
+def sample_epub_file(tmp_path: Path) -> Path:
+    """Create a minimal valid EPUB file using ebooklib."""
+    import ebooklib.epub as epub
+
+    book = epub.EpubBook()
+    book.set_title("Test Book")
+    book.add_author("Test Author")
+    book.set_language("en")
+
+    chapter = epub.EpubHtml(
+        title="Chapter 1",
+        file_name="chap1.xhtml",
+        lang="en",
+    )
+    chapter.set_content(
+        b"<html><body><h1>Chapter 1</h1><p>This is test content for the EPUB loader.</p></body></html>"
+    )
+    book.add_item(chapter)
+    book.toc = (epub.Link("chap1.xhtml", "Chapter 1", "chap1"),)
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = ["nav", chapter]
+
+    epub_path = tmp_path / "test.epub"
+    epub.write_epub(str(epub_path), book)
+    return epub_path
+
+
+class TestEpubLoader:
+    """Tests for EpubLoader."""
+
+    def test_load_epub_content(self, sample_epub_file: Path):
+        """Verify chapter headings and body text are present in document content."""
+        loader = EpubLoader()
+        doc = loader.load(sample_epub_file)
+        assert "Chapter 1" in doc.content
+        assert "test content for the EPUB loader" in doc.content
+
+    def test_epub_metadata_title(self, sample_epub_file: Path):
+        """Verify title is extracted from Dublin Core metadata."""
+        loader = EpubLoader()
+        doc = loader.load(sample_epub_file)
+        assert doc.metadata["title"] == "Test Book"
+
+    def test_epub_metadata_author(self, sample_epub_file: Path):
+        """Verify author is extracted from Dublin Core metadata."""
+        loader = EpubLoader()
+        doc = loader.load(sample_epub_file)
+        assert doc.metadata["author"] == "Test Author"
+
+    def test_epub_metadata_language(self, sample_epub_file: Path):
+        """Verify language is extracted from Dublin Core metadata."""
+        loader = EpubLoader()
+        doc = loader.load(sample_epub_file)
+        assert doc.metadata["language"] == "en"
+
+    def test_epub_metadata_filename(self, sample_epub_file: Path):
+        """Verify filename and extension are present in metadata."""
+        loader = EpubLoader()
+        doc = loader.load(sample_epub_file)
+        assert doc.metadata["filename"] == "test.epub"
+        assert doc.metadata["extension"] == ".epub"
+
+    def test_epub_source_path(self, sample_epub_file: Path):
+        """Verify source_path matches the epub file path."""
+        loader = EpubLoader()
+        doc = loader.load(sample_epub_file)
+        assert doc.source_path == sample_epub_file
+
+    def test_epub_preferred_chunker(self):
+        """Verify preferred_chunker is set to 'recursive'."""
+        assert EpubLoader.preferred_chunker == "recursive"
+
+
 class TestLoaderFactory:
     """Tests for get_loader factory function."""
 
@@ -261,6 +337,11 @@ class TestLoaderFactory:
         for ext in [".php3", ".php4", ".php5", ".phtml"]:
             loader = get_loader(tmp_path / f"test{ext}")
             assert isinstance(loader, PHPCodeLoader), f"Failed for extension {ext}"
+
+    def test_get_loader_for_epub(self, tmp_path: Path):
+        """Verify .epub returns EpubLoader."""
+        loader = get_loader(tmp_path / "test.epub")
+        assert isinstance(loader, EpubLoader)
 
 
 class TestPDFLoaderHelpers:
@@ -388,6 +469,7 @@ class TestLoadersRegistry:
         assert ".txt" in LOADERS
         assert ".text" in LOADERS
         assert ".pdf" in LOADERS
+        assert ".epub" in LOADERS
         assert ".rst" in LOADERS
         # Code loaders are in CODE_EXTENSIONS (lazy loading to avoid circular imports)
         from qdrant_indexer.loaders import CODE_EXTENSIONS
@@ -571,6 +653,9 @@ class TestPreferredChunker:
 
     def test_rst_loader_preferred_chunker(self):
         assert ReStructuredTextLoader.preferred_chunker == "recursive"
+
+    def test_epub_loader_preferred_chunker(self):
+        assert EpubLoader.preferred_chunker == "recursive"
 
     def test_html_loader_preferred_chunker(self):
         assert HTMLLoader.preferred_chunker == "html"
