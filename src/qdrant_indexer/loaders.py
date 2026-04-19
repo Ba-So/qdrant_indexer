@@ -657,7 +657,7 @@ class EpubLoader(DocumentLoader):
         chapters: list[str] = []
         for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
             content = item.get_content()
-            soup = BeautifulSoup(content, "lxml")
+            soup = BeautifulSoup(content, "lxml-xml")
             text = soup.get_text(separator="\n", strip=True)
             if text.strip():
                 chapters.append(text)
