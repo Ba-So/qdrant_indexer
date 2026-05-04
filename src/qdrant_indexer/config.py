@@ -206,6 +206,41 @@ def _deep_copy_config(config: Config) -> Config:
     return Config(**section_copies)
 
 
+def _toml_value(value: Any) -> str:
+    """Format a Python scalar/list as a TOML literal."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(v) for v in value) + "]"
+    raise TypeError(f"Unsupported TOML value type: {type(value).__name__}")
+
+
+def render_default_config() -> str:
+    """Render a TOML document populated with current dataclass defaults.
+
+    Fields whose default value is ``None`` are emitted as commented-out
+    placeholders so the user sees the available keys without setting them.
+    """
+    config = Config()
+    lines: list[str] = []
+    for section_field in dataclasses.fields(config):
+        section = getattr(config, section_field.name)
+        lines.append(f"[{section_field.name}]")
+        for f in dataclasses.fields(section):
+            value = getattr(section, f.name)
+            if value is None:
+                lines.append(f"# {f.name} =")
+            else:
+                lines.append(f"{f.name} = {_toml_value(value)}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def merge_config(config: Config, **overrides: Any) -> Config:
     """Merge CLI arguments into config (CLI takes precedence).
 

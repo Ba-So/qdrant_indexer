@@ -22,7 +22,11 @@ from rich.progress import (
 from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
-from qdrant_indexer.config import load_config
+from qdrant_indexer.config import (
+    DEFAULT_CONFIG_FILENAMES,
+    load_config,
+    render_default_config,
+)
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_INDEX_PATTERNS, discover_files
 from qdrant_indexer.models import IndexedFileState, IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.indexer import (
@@ -935,6 +939,49 @@ def _list_models_table(
     console.print(table)
     console.print(f"\n[dim]Total: {len(models)} models[/dim]")
     console.print(f"[dim]Default: {default_model}[/dim]")
+
+
+@app.command()
+def init(
+    path: Annotated[
+        Path,
+        typer.Option(
+            "--path",
+            help="Directory in which to write the config file",
+        ),
+    ] = Path.cwd(),
+    filename: Annotated[
+        str,
+        typer.Option(
+            "--filename",
+            help=f"Config filename (must be one of {DEFAULT_CONFIG_FILENAMES})",
+        ),
+    ] = DEFAULT_CONFIG_FILENAMES[0],
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Overwrite existing file"),
+    ] = False,
+) -> None:
+    """Write a default config file populated with current built-in defaults.
+
+    The generated TOML mirrors the dataclasses in ``qdrant_indexer.config`` so
+    the file always matches what the running version would use when no config
+    is present.
+    """
+    if filename not in DEFAULT_CONFIG_FILENAMES:
+        display_error(
+            f"Filename '{filename}' is not auto-discovered. "
+            f"Use one of: {', '.join(DEFAULT_CONFIG_FILENAMES)}"
+        )
+        raise typer.Exit(1)
+
+    target = path / filename
+    if target.exists() and not force:
+        display_error(f"{target} already exists. Pass --force to overwrite.")
+        raise typer.Exit(1)
+
+    target.write_text(render_default_config())
+    console.print(f"Wrote default config to [cyan]{target}[/cyan]")
 
 
 @app.command("list-models")
