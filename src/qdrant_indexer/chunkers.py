@@ -961,6 +961,7 @@ class SemanticChunker(_WithFallback, Chunker):
     # Class-level model cache
     _model: TextEmbedding | None = None
     _model_name: str | None = None
+    _model_cache_dir: str | None = None
 
     def __init__(
         self,
@@ -968,6 +969,7 @@ class SemanticChunker(_WithFallback, Chunker):
         min_chunk_size: int = 200,
         similarity_threshold: float = 0.5,
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+        cache_dir: str | None = None,
     ):
         """Initialize the semantic chunker.
 
@@ -976,26 +978,36 @@ class SemanticChunker(_WithFallback, Chunker):
             min_chunk_size: Minimum chunk size; smaller chunks are merged.
             similarity_threshold: Cosine similarity threshold below which to split.
             embedding_model: Name of the fastembed model to use.
+            cache_dir: Directory where FastEmbed stores downloaded model files.
+                       When ``None``, FastEmbed falls back to
+                       ``$FASTEMBED_CACHE_PATH`` or ``<tempdir>/fastembed_cache``.
         """
         self.chunk_size = chunk_size
         self.min_chunk_size = min_chunk_size
         self.similarity_threshold = similarity_threshold
         self.embedding_model = embedding_model
+        self.cache_dir = cache_dir
         self.overlap = 0  # semantic split points are already meaningful; no overlap needed
 
     @classmethod
-    def _get_model(cls, model_name: str) -> TextEmbedding:
+    def _get_model(cls, model_name: str, cache_dir: str | None = None) -> TextEmbedding:
         """Get or create cached TextEmbedding model.
 
         Args:
             model_name: Name of the embedding model.
+            cache_dir: Directory where FastEmbed stores downloaded model files.
 
         Returns:
             Cached or newly created TextEmbedding instance.
         """
-        if cls._model is None or cls._model_name != model_name:
-            cls._model = TextEmbedding(model_name=model_name)
+        if (
+            cls._model is None
+            or cls._model_name != model_name
+            or cls._model_cache_dir != cache_dir
+        ):
+            cls._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
             cls._model_name = model_name
+            cls._model_cache_dir = cache_dir
         return cls._model
 
     def _split_into_paragraphs(self, text: str) -> list[str]:
@@ -1031,7 +1043,7 @@ class SemanticChunker(_WithFallback, Chunker):
         Returns:
             List of embedding vectors as numpy arrays.
         """
-        model = self._get_model(self.embedding_model)
+        model = self._get_model(self.embedding_model, self.cache_dir)
         embeddings = list(model.embed(segments))
         return [np.array(e) for e in embeddings]
 

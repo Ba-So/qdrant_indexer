@@ -142,6 +142,7 @@ class EmbeddingService:
         providers: list[str],
         enable_images: bool = False,
         clip_vision_model: str = DEFAULT_CLIP_VISION_MODEL,
+        cache_dir: str | None = None,
     ):
         """Initialize embedding models.
 
@@ -150,13 +151,19 @@ class EmbeddingService:
             providers: ONNX execution providers in priority order (e.g. CUDA, CPU).
             enable_images: Whether to prepare for CLIP image embedding.
             clip_vision_model: FastEmbed CLIP model name (used only when enable_images=True).
+            cache_dir: Directory where FastEmbed stores downloaded model files.
+                       When ``None``, FastEmbed falls back to ``$FASTEMBED_CACHE_PATH``
+                       or ``<tempdir>/fastembed_cache``.
         """
         model_info = get_model_info(embedding_model)
         self.text_vector_size: int = model_info["dim"]
         self.text_vector_name: str = model_to_vector_name(embedding_model)
 
-        self._text_model = TextEmbedding(model_name=embedding_model, providers=providers)
+        self._text_model = TextEmbedding(
+            model_name=embedding_model, providers=providers, cache_dir=cache_dir
+        )
         self._providers = providers
+        self._cache_dir = cache_dir
         self._enable_images = enable_images
         self._clip_vision_model = clip_vision_model
         self._image_model = None  # lazy-initialized on first use
@@ -202,6 +209,7 @@ class EmbeddingService:
             self._image_model = ImageEmbedding(
                 model_name=self._clip_vision_model,
                 providers=self._providers,
+                cache_dir=self._cache_dir,
             )
         return list(self._image_model.embed(pil_images))
 
@@ -214,13 +222,14 @@ def _load_pdf_file(args: tuple) -> dict:
     via ProcessPoolExecutor.
 
     Args:
-        args: Tuple of (file_path_str, chunk_size, overlap, chunker_strategy)
+        args: Tuple of (file_path_str, chunk_size, overlap, chunker_strategy, cache_dir)
               chunker_strategy can be "auto" or a specific strategy name.
+              cache_dir is the FastEmbed cache directory or ``None``.
 
     Returns:
         Dict with 'file_path', 'chunks' (list of chunk dicts), 'chunker_used', and 'error'.
     """
-    file_path_str, chunk_size, overlap, chunker_strategy = args
+    file_path_str, chunk_size, overlap, chunker_strategy, cache_dir = args
     file_path = Path(file_path_str)
 
     try:
@@ -234,11 +243,14 @@ def _load_pdf_file(args: tuple) -> dict:
         # Select chunker based on strategy
         if chunker_strategy == "auto":
             chunker = get_chunker_for_file(
-                file_path, chunk_size=chunk_size, overlap=overlap
+                file_path, chunk_size=chunk_size, overlap=overlap, cache_dir=cache_dir
             )
         else:
             chunker = get_chunker(
-                chunker_strategy, chunk_size=chunk_size, overlap=overlap
+                chunker_strategy,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                cache_dir=cache_dir,
             )
 
         chunker_used = type(chunker).__name__
@@ -349,6 +361,7 @@ class QdrantIndexer:
         enable_image_embeddings: bool = False,
         clip_vision_model: str = DEFAULT_CLIP_VISION_MODEL,
         min_image_size: int = 100,
+        cache_dir: str | None = None,
     ):
         """Initialize the indexer.
 
@@ -361,6 +374,9 @@ class QdrantIndexer:
             enable_image_embeddings: Enable CLIP-based image embedding for PDFs.
             clip_vision_model: FastEmbed CLIP model for image embeddings.
             min_image_size: Minimum image dimension in pixels for extraction.
+            cache_dir: Directory where FastEmbed stores downloaded model files.
+                       When ``None``, FastEmbed falls back to
+                       ``$FASTEMBED_CACHE_PATH`` or ``<tempdir>/fastembed_cache``.
         """
         self.client = QdrantClient(url=qdrant_url)
         self.collection = collection_name
@@ -368,6 +384,7 @@ class QdrantIndexer:
         self.enable_image_embeddings = enable_image_embeddings
         self.clip_vision_model = clip_vision_model
         self.min_image_size = min_image_size
+        self.cache_dir = cache_dir
 
         # Auto-detect CUDA from environment if not explicitly set
         if use_cuda is None:
@@ -385,6 +402,7 @@ class QdrantIndexer:
             providers=providers,
             enable_images=enable_image_embeddings,
             clip_vision_model=clip_vision_model,
+            cache_dir=cache_dir,
         )
 
         # Expose vector names/sizes for collection management
@@ -551,7 +569,10 @@ class QdrantIndexer:
         # Auto-select chunker based on file type if None
         if chunker is None:
             chunker = get_chunker_for_file(
-                file_path, chunk_size=chunk_size, overlap=overlap
+                file_path,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                cache_dir=self.cache_dir,
             )
             logger.debug(
                 f"Auto-selected {type(chunker).__name__} for {file_path.name}"
@@ -820,7 +841,10 @@ class QdrantIndexer:
             # Auto-select chunker based on file type if None
             if chunker is None:
                 chunker = get_chunker_for_file(
-                    file_path, chunk_size=chunk_size, overlap=overlap
+                    file_path,
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                    cache_dir=self.cache_dir,
                 )
                 logger.debug(
                     f"Auto-selected {type(chunker).__name__} for {file_path.name}"
@@ -937,7 +961,7 @@ class QdrantIndexer:
         # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
         if pdf_files:
             pdf_args = [
-                (str(f), pdf_chunk_size, pdf_overlap, chunker_strategy)
+                (str(f), pdf_chunk_size, pdf_overlap, chunker_strategy, self.cache_dir)
                 for f in pdf_files
             ]
 

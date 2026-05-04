@@ -22,6 +22,7 @@ from rich.progress import (
 from rich.table import Table
 
 from qdrant_indexer.chunkers import CHUNKERS, get_chunker
+from qdrant_indexer.config import load_config
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_INDEX_PATTERNS, discover_files
 from qdrant_indexer.models import IndexedFileState, IndexResult, ProgressEvent, SyncResult
 from qdrant_indexer.indexer import (
@@ -446,6 +447,9 @@ def index(
 
     start_time = time.time()
 
+    # Resolve FastEmbed cache directory from config file / FASTEMBED_CACHE_PATH env
+    cache_dir = load_config().embedding.cache_dir
+
     try:
         # Check GPU availability if requested
         if gpu and not quiet:
@@ -477,6 +481,7 @@ def index(
                 enable_image_embeddings=images,
                 clip_vision_model=clip_model,
                 min_image_size=min_image_size,
+                cache_dir=cache_dir,
             )
 
             progress.update(init_task, description="Connecting to Qdrant...")
@@ -500,6 +505,7 @@ def index(
                 chunker_strategy,
                 chunk_size=chunk_size,
                 overlap=chunk_overlap,
+                cache_dir=cache_dir,
             )
 
         # Build exclude patterns list and bundle shared params into config
@@ -715,7 +721,7 @@ def clean(
     state = IndexState(state_file)
     state.load()
 
-    indexer = QdrantIndexer(url, collection)
+    indexer = QdrantIndexer(url, collection, cache_dir=load_config().embedding.cache_dir)
 
     try:
         if all:
