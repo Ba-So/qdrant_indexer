@@ -968,7 +968,7 @@ class SemanticChunker(_WithFallback, Chunker):
         chunk_size: int = 1500,
         min_chunk_size: int = 200,
         similarity_threshold: float = 0.5,
-        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+        embedding_model: str | None = None,
         cache_dir: str | None = None,
     ):
         """Initialize the semantic chunker.
@@ -977,11 +977,18 @@ class SemanticChunker(_WithFallback, Chunker):
             chunk_size: Maximum size of each chunk in characters.
             min_chunk_size: Minimum chunk size; smaller chunks are merged.
             similarity_threshold: Cosine similarity threshold below which to split.
-            embedding_model: Name of the fastembed model to use.
+            embedding_model: Name of the fastembed model to use. When ``None``,
+                falls back to :data:`qdrant_indexer.config.DEFAULT_EMBEDDING_MODEL`
+                so the chunker shares the indexer's retrieval embedding space and
+                avoids a second model download.
             cache_dir: Directory where FastEmbed stores downloaded model files.
                        When ``None``, FastEmbed falls back to
                        ``$FASTEMBED_CACHE_PATH`` or ``<tempdir>/fastembed_cache``.
         """
+        from qdrant_indexer.config import DEFAULT_EMBEDDING_MODEL
+
+        if embedding_model is None:
+            embedding_model = DEFAULT_EMBEDDING_MODEL
         self.chunk_size = chunk_size
         self.min_chunk_size = min_chunk_size
         self.similarity_threshold = similarity_threshold

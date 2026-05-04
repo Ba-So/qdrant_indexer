@@ -222,14 +222,24 @@ def _load_pdf_file(args: tuple) -> dict:
     via ProcessPoolExecutor.
 
     Args:
-        args: Tuple of (file_path_str, chunk_size, overlap, chunker_strategy, cache_dir)
-              chunker_strategy can be "auto" or a specific strategy name.
-              cache_dir is the FastEmbed cache directory or ``None``.
+        args: Tuple of (file_path_str, chunk_size, overlap, chunker_strategy,
+              cache_dir, embedding_model). chunker_strategy can be "auto" or
+              a specific strategy name. cache_dir is the FastEmbed cache
+              directory or ``None``. embedding_model is the FastEmbed model
+              name shared with the indexer (used by SemanticChunker), or
+              ``None`` to fall back to the chunker default.
 
     Returns:
         Dict with 'file_path', 'chunks' (list of chunk dicts), 'chunker_used', and 'error'.
     """
-    file_path_str, chunk_size, overlap, chunker_strategy, cache_dir = args
+    (
+        file_path_str,
+        chunk_size,
+        overlap,
+        chunker_strategy,
+        cache_dir,
+        embedding_model,
+    ) = args
     file_path = Path(file_path_str)
 
     try:
@@ -243,7 +253,11 @@ def _load_pdf_file(args: tuple) -> dict:
         # Select chunker based on strategy
         if chunker_strategy == "auto":
             chunker = get_chunker_for_file(
-                file_path, chunk_size=chunk_size, overlap=overlap, cache_dir=cache_dir
+                file_path,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                cache_dir=cache_dir,
+                embedding_model=embedding_model,
             )
         else:
             chunker = get_chunker(
@@ -251,6 +265,7 @@ def _load_pdf_file(args: tuple) -> dict:
                 chunk_size=chunk_size,
                 overlap=overlap,
                 cache_dir=cache_dir,
+                embedding_model=embedding_model,
             )
 
         chunker_used = type(chunker).__name__
@@ -573,6 +588,7 @@ class QdrantIndexer:
                 chunk_size=chunk_size,
                 overlap=overlap,
                 cache_dir=self.cache_dir,
+                embedding_model=self.embedding_model,
             )
             logger.debug(
                 f"Auto-selected {type(chunker).__name__} for {file_path.name}"
@@ -845,6 +861,7 @@ class QdrantIndexer:
                     chunk_size=chunk_size,
                     overlap=overlap,
                     cache_dir=self.cache_dir,
+                    embedding_model=self.embedding_model,
                 )
                 logger.debug(
                     f"Auto-selected {type(chunker).__name__} for {file_path.name}"
@@ -961,7 +978,14 @@ class QdrantIndexer:
         # Process PDF files with ProcessPoolExecutor (PyMuPDF is not thread-safe)
         if pdf_files:
             pdf_args = [
-                (str(f), pdf_chunk_size, pdf_overlap, chunker_strategy, self.cache_dir)
+                (
+                    str(f),
+                    pdf_chunk_size,
+                    pdf_overlap,
+                    chunker_strategy,
+                    self.cache_dir,
+                    self.embedding_model,
+                )
                 for f in pdf_files
             ]
 

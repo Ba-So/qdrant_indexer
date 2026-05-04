@@ -506,6 +506,7 @@ def index(
                 chunk_size=chunk_size,
                 overlap=chunk_overlap,
                 cache_dir=cache_dir,
+                embedding_model=embedding_model,
             )
 
         # Build exclude patterns list and bundle shared params into config
