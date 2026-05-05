@@ -1,0 +1,21 @@
+[qdrant]
+url = "http://localhost:6333"
+
+[embedding]
+model = "sentence-transformers/all-MiniLM-L6-v2"
+# cache_dir =
+
+[chunking]
+strategy = "recursive"
+chunk_size = 1536
+chunk_overlap = 200
+
+[indexing]
+batch_size = 100
+patterns = ["**/*.md", "**/*.txt", "**/*.pdf", "**/*.epub", "**/*.rst", "**/*.html", "**/*.htm", "**/*.py", "**/*.php", "**/*.rs"]
+exclude_patterns = []
+
+[image_embedding]
+enabled = false
+vision_model = "Qdrant/clip-ViT-B-32-vision"
+min_image_size = 100
