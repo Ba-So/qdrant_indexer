@@ -3,7 +3,7 @@ url = "http://localhost:6333"
 
 [embedding]
 model = "sentence-transformers/all-MiniLM-L6-v2"
-# cache_dir =
+cache_dir = "~/.cache/qdrant-indexer/models"
 
 [chunking]
 strategy = "recursive"
