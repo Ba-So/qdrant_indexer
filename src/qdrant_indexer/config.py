@@ -77,6 +77,26 @@ class Config:
 
 DEFAULT_CONFIG_FILENAMES = ["config.toml", ".qdrant-indexer.toml"]
 
+# XDG application subdirectory for the user-global config file.
+XDG_APP_DIR = "qdrant-indexer"
+
+
+def xdg_config_home() -> Path:
+    """Return ``$XDG_CONFIG_HOME`` or the spec default ``~/.config``."""
+    raw = os.environ.get("XDG_CONFIG_HOME")
+    if raw:
+        return Path(raw)
+    return Path.home() / ".config"
+
+
+def xdg_config_path() -> Path:
+    """Return the canonical XDG-Home path for the user-global config file.
+
+    ``$XDG_CONFIG_HOME/qdrant-indexer/config.toml`` (default
+    ``~/.config/qdrant-indexer/config.toml``).
+    """
+    return xdg_config_home() / XDG_APP_DIR / DEFAULT_CONFIG_FILENAMES[0]
+
 # Maps CLI kwarg names to dotted config paths ("section.field").
 # This is the single authoritative record of how CLI arguments map to config fields.
 _CLI_OVERRIDE_MAP: dict[str, str] = {
@@ -93,13 +113,21 @@ _CLI_OVERRIDE_MAP: dict[str, str] = {
 
 
 def find_config_file(start_path: Path | None = None) -> Path | None:
-    """Search for config file in current directory and parents.
+    """Search for a config file.
+
+    Lookup order:
+
+    1. Walk up from ``start_path`` (default cwd) to filesystem root checking
+       for any name in :data:`DEFAULT_CONFIG_FILENAMES`. Project-local files
+       win so per-repo overrides keep working.
+    2. Fall back to the XDG-Home location returned by :func:`xdg_config_path`,
+       which is the canonical user-global location.
 
     Args:
-        start_path: Directory to start searching from (defaults to cwd).
+        start_path: Directory to start the project-local search from.
 
     Returns:
-        Path to config file if found, None otherwise.
+        Path to the config file if found, otherwise ``None``.
     """
     if start_path is None:
         start_path = Path.cwd()
@@ -107,7 +135,6 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
     current = start_path.resolve()
 
     while True:
-        # Check each possible config filename
         for fn in DEFAULT_CONFIG_FILENAMES:
             config_path = current / fn
             if config_path.exists():
@@ -117,6 +144,10 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
             # Reached root
             break
         current = parent
+
+    xdg_path = xdg_config_path()
+    if xdg_path.exists():
+        return xdg_path
 
     return None
 

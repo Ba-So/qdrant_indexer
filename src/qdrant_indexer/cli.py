@@ -26,6 +26,7 @@ from qdrant_indexer.config import (
     DEFAULT_CONFIG_FILENAMES,
     load_config,
     render_default_config,
+    xdg_config_path,
 )
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_INDEX_PATTERNS, discover_files
 from qdrant_indexer.models import IndexedFileState, IndexResult, ProgressEvent, SyncResult
@@ -943,20 +944,21 @@ def _list_models_table(
 
 @app.command()
 def init(
-    path: Annotated[
-        Path,
+    target: Annotated[
+        Optional[Path],
         typer.Option(
-            "--path",
-            help="Directory in which to write the config file",
+            "--target",
+            "-t",
+            help="Explicit path for the config file. Overrides --local.",
         ),
-    ] = Path.cwd(),
-    filename: Annotated[
-        str,
+    ] = None,
+    local: Annotated[
+        bool,
         typer.Option(
-            "--filename",
-            help=f"Config filename (must be one of {DEFAULT_CONFIG_FILENAMES})",
+            "--local",
+            help="Write project-local ./config.toml instead of the XDG-Home location.",
         ),
-    ] = DEFAULT_CONFIG_FILENAMES[0],
+    ] = False,
     force: Annotated[
         bool,
         typer.Option("--force", "-f", help="Overwrite existing file"),
@@ -964,22 +966,22 @@ def init(
 ) -> None:
     """Write a default config file populated with current built-in defaults.
 
-    The generated TOML mirrors the dataclasses in ``qdrant_indexer.config`` so
-    the file always matches what the running version would use when no config
-    is present.
-    """
-    if filename not in DEFAULT_CONFIG_FILENAMES:
-        display_error(
-            f"Filename '{filename}' is not auto-discovered. "
-            f"Use one of: {', '.join(DEFAULT_CONFIG_FILENAMES)}"
-        )
-        raise typer.Exit(1)
+    By default the file is written to the XDG-Home location
+    ``$XDG_CONFIG_HOME/qdrant-indexer/config.toml`` (default
+    ``~/.config/qdrant-indexer/config.toml``), which is where the loader looks
+    when no project-local config is found while walking up from the cwd.
 
-    target = path / filename
+    Use ``--local`` to drop a ``config.toml`` in the current directory instead,
+    or pass ``--target`` for an arbitrary path.
+    """
+    if target is None:
+        target = Path.cwd() / DEFAULT_CONFIG_FILENAMES[0] if local else xdg_config_path()
+
     if target.exists() and not force:
         display_error(f"{target} already exists. Pass --force to overwrite.")
         raise typer.Exit(1)
 
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(render_default_config())
     console.print(f"Wrote default config to [cyan]{target}[/cyan]")
 
