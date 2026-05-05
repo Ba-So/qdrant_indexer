@@ -11,6 +11,7 @@ import numpy as np
 from bs4 import BeautifulSoup, Tag
 from fastembed import TextEmbedding
 
+from qdrant_indexer.cache import validate_fastembed_cache
 from qdrant_indexer.models import CodeSymbol
 
 logger = logging.getLogger(__name__)
@@ -1012,6 +1013,7 @@ class SemanticChunker(_WithFallback, Chunker):
             or cls._model_name != model_name
             or cls._model_cache_dir != cache_dir
         ):
+            validate_fastembed_cache(cache_dir)
             cls._model = TextEmbedding(model_name=model_name, cache_dir=cache_dir)
             cls._model_name = model_name
             cls._model_cache_dir = cache_dir

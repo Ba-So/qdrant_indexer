@@ -21,6 +21,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
+from qdrant_indexer.cache import validate_fastembed_cache
 from qdrant_indexer.chunkers import Chunker, RecursiveChunker, get_chunker_for_file
 from qdrant_indexer.filters import DEFAULT_INDEX_PATTERNS, glob_and_dedup, filter_files
 from qdrant_indexer.loaders import get_loader
@@ -162,6 +163,8 @@ class EmbeddingService:
         self.text_vector_size: int = model_info["dim"]
         self.text_vector_name: str = model_to_vector_name(embedding_model)
 
+        validate_fastembed_cache(cache_dir)
+
         self._text_model = TextEmbedding(
             model_name=embedding_model, providers=providers, cache_dir=cache_dir
         )
@@ -208,6 +211,8 @@ class EmbeddingService:
             raise RuntimeError("Image embedding is not enabled for this EmbeddingService")
         if self._image_model is None:
             from fastembed import ImageEmbedding
+
+            validate_fastembed_cache(self._cache_dir)
 
             self._image_model = ImageEmbedding(
                 model_name=self._clip_vision_model,
