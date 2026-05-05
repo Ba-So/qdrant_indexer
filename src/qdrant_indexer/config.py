@@ -37,7 +37,7 @@ class EmbeddingConfig:
     """Embedding model configuration."""
 
     model: str = DEFAULT_EMBEDDING_MODEL
-    cache_dir: str | None = None
+    cache_dir: str = field(default_factory=lambda: str(default_model_cache_dir()))
 
 
 @dataclass
@@ -99,6 +99,24 @@ def xdg_config_path() -> Path:
     ``~/.config/qdrant-indexer/config.toml``).
     """
     return xdg_config_home() / XDG_APP_DIR / DEFAULT_CONFIG_FILENAMES[0]
+
+
+def xdg_cache_home() -> Path:
+    """Return ``$XDG_CACHE_HOME`` or the spec default ``~/.cache``."""
+    raw = os.environ.get("XDG_CACHE_HOME")
+    if raw:
+        return Path(raw)
+    return Path.home() / ".cache"
+
+
+def default_model_cache_dir() -> Path:
+    """Return the default location for downloaded embedding model files.
+
+    ``$XDG_CACHE_HOME/qdrant-indexer/models`` (default
+    ``~/.cache/qdrant-indexer/models``). Cached model weights are regenerable,
+    so they belong under the XDG cache hierarchy rather than config or data.
+    """
+    return xdg_cache_home() / XDG_APP_DIR / "models"
 
 # Maps CLI kwarg names to dotted config paths ("section.field").
 # This is the single authoritative record of how CLI arguments map to config fields.

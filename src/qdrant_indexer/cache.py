@@ -3,8 +3,9 @@
 import logging
 import os
 import shutil
-import tempfile
 from pathlib import Path
+
+from qdrant_indexer.config import default_model_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ def _resolve_cache_dir(cache_dir: str | None) -> Path:
     env = os.environ.get("FASTEMBED_CACHE_PATH")
     if env:
         return Path(env).expanduser()
-    return Path(tempfile.gettempdir()) / "fastembed_cache"
+    return default_model_cache_dir()
 
 
 def _is_model_dir_broken(model_dir: Path) -> tuple[bool, str]:
