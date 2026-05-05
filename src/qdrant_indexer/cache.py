@@ -14,10 +14,10 @@ _validated: set[Path] = set()
 def _resolve_cache_dir(cache_dir: str | None) -> Path:
     """Resolve the FastEmbed cache directory using the same precedence FastEmbed uses."""
     if cache_dir:
-        return Path(cache_dir)
+        return Path(cache_dir).expanduser()
     env = os.environ.get("FASTEMBED_CACHE_PATH")
     if env:
-        return Path(env)
+        return Path(env).expanduser()
     return Path(tempfile.gettempdir()) / "fastembed_cache"
 
 

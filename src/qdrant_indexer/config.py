@@ -177,6 +177,13 @@ def load_config(config_path: Path | None = None) -> Config:
     # Apply environment variable overrides
     config = _apply_env_overrides(config)
 
+    # Expand ~ in path-like fields so downstream consumers (FastEmbed) see
+    # an absolute path instead of creating a literal "~" directory at cwd.
+    if config.embedding.cache_dir:
+        config.embedding.cache_dir = str(
+            Path(config.embedding.cache_dir).expanduser()
+        )
+
     return config
 
 
