@@ -120,11 +120,10 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
 
     Lookup order:
 
-    1. Walk up from ``start_path`` (default cwd) to filesystem root checking
-       for any name in :data:`DEFAULT_CONFIG_FILENAMES`. Project-local files
-       win so per-repo overrides keep working.
-    2. Fall back to the XDG-Home location returned by :func:`xdg_config_path`,
-       which is the canonical user-global location.
+    1. The XDG-Home location returned by :func:`xdg_config_path`, which is
+       the canonical user-global location.
+    2. Walk up from ``start_path`` (default cwd) to filesystem root checking
+       for any name in :data:`DEFAULT_CONFIG_FILENAMES`.
 
     Args:
         start_path: Directory to start the project-local search from.
@@ -132,6 +131,10 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
     Returns:
         Path to the config file if found, otherwise ``None``.
     """
+    xdg_path = xdg_config_path()
+    if xdg_path.exists():
+        return xdg_path
+
     if start_path is None:
         start_path = Path.cwd()
 
@@ -147,10 +150,6 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
             # Reached root
             break
         current = parent
-
-    xdg_path = xdg_config_path()
-    if xdg_path.exists():
-        return xdg_path
 
     return None
 
