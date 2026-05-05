@@ -30,10 +30,13 @@ from qdrant_indexer.state import IndexState, compute_file_hash, get_file_mtime
 
 logger = logging.getLogger(__name__)
 
-from .config import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_BATCH_SIZE, DEFAULT_WORKERS, PDF_EXTENSIONS
-
-# Default CLIP vision model for image embeddings
-DEFAULT_CLIP_VISION_MODEL = "Qdrant/clip-ViT-B-32-vision"
+from .config import (
+    DEFAULT_CLIP_VISION_MODEL,
+    DEFAULT_EMBEDDING_BATCH_SIZE,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_WORKERS,
+    PDF_EXTENSIONS,
+)
 
 
 def get_model_info(model_name: str) -> dict:

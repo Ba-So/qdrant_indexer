@@ -4,10 +4,9 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Optional
 
 import typer
-from qdrant_client import QdrantClient
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
@@ -21,23 +20,21 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from qdrant_indexer.chunkers import CHUNKERS, get_chunker
 from qdrant_indexer.config import (
+    DEFAULT_CLIP_VISION_MODEL,
     DEFAULT_CONFIG_FILENAMES,
+    DEFAULT_EMBEDDING_BATCH_SIZE,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_WORKERS,
     load_config,
     render_default_config,
     xdg_config_path,
 )
 from qdrant_indexer.filters import DEFAULT_EXCLUDE_PATTERNS, DEFAULT_INDEX_PATTERNS, discover_files
 from qdrant_indexer.models import IndexedFileState, IndexResult, ProgressEvent, SyncResult
-from qdrant_indexer.indexer import (
-    DEFAULT_CLIP_VISION_MODEL,
-    DEFAULT_EMBEDDING_BATCH_SIZE,
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_WORKERS,
-    QdrantIndexer,
-    is_cuda_available,
-)
+
+if TYPE_CHECKING:
+    from qdrant_indexer.indexer import QdrantIndexer
 
 app = typer.Typer(help="Qdrant Indexer - Index documentation into Qdrant collections")
 console = Console()
@@ -441,6 +438,9 @@ def index(
         display_error(f"Path is not a directory: {path}")
         raise typer.Exit(1)
 
+    from qdrant_indexer.chunkers import CHUNKERS, get_chunker
+    from qdrant_indexer.indexer import QdrantIndexer, is_cuda_available
+
     # Validate chunker strategy early (before connecting to Qdrant)
     if chunker_strategy != "auto" and chunker_strategy not in CHUNKERS:
         valid_strategies = ", ".join(sorted(CHUNKERS.keys()))
@@ -648,7 +648,7 @@ def status(
 
 
 def _delete_file_entries(
-    indexer: QdrantIndexer,
+    indexer: "QdrantIndexer",
     file_entries: dict[str, IndexedFileState],
     quiet: bool,
     console: Console,
@@ -722,6 +722,7 @@ def clean(
         display_error(f"No state file found at {state_file}")
         raise typer.Exit(1)
 
+    from qdrant_indexer.indexer import QdrantIndexer
     from qdrant_indexer.state import IndexState
 
     state = IndexState(state_file)
@@ -820,6 +821,8 @@ def list_collections(
     """List all Qdrant collections with their point counts."""
     _state.quiet = quiet
 
+    from qdrant_client import QdrantClient
+
     try:
         client = QdrantClient(url=url)
         collections = client.get_collections().collections
@@ -875,6 +878,8 @@ def delete_collection(
 ) -> None:
     """Delete a Qdrant collection."""
     _state.quiet = quiet
+
+    from qdrant_client import QdrantClient
 
     try:
         client = QdrantClient(url=url)

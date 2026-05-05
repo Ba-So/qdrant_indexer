@@ -18,6 +18,9 @@ DEFAULT_EMBEDDING_BATCH_SIZE = 64
 # Default number of workers for parallel processing (max 4, based on CPU count)
 DEFAULT_WORKERS = min(4, (os.cpu_count() or 1))
 
+# Default CLIP vision model for image embeddings
+DEFAULT_CLIP_VISION_MODEL = "Qdrant/clip-ViT-B-32-vision"
+
 # PDF extensions that need process‑based parallelism (PyMuPDF is not thread‑safe)
 PDF_EXTENSIONS = {".pdf"}
 
